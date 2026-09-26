@@ -42,7 +42,8 @@ Per agent (verified 2026-09-27):
 
 - **Claude Code:** `senti install claude --sandbox` writes Claude Code's built-in Bash sandbox block (`sandbox.enabled`,
   `failIfUnavailable`, `filesystem.denyRead/denyWrite`, `network.allowedDomains/deniedDomains/allowUnixSockets/strictAllowlist`)
-  derived from the same profile. Tested live: commands run sandboxed, hooks still reach Senti.
+  derived from the same profile. Tested live: commands run sandboxed, hooks still reach Senti. `**/.env*` is not put in Claude Code's
+  `denyRead` (Seatbelt also denies metadata, which broke pytest collection in a repo with `.env`); Senti's rules still guard `.env` reads.
 - **OpenCode (and any CLI agent):** `eval "$(senti shell-init --agents opencode)"` defines a shell function that starts the agent
   under `senti run` (srt). Tested: `.env` unreadable, home writes denied, `example.com` blocked, `pypi.org` allowed.
 - **Codex:** keeps its own command sandbox (`-s workspace-write`); wrapping the whole Codex process in Seatbelt breaks Keychain-based login.

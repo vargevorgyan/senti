@@ -72,7 +72,8 @@ def claude_sandbox_block(srt: dict) -> dict:
     return {
         "enabled": True,
         "failIfUnavailable": True,
-        "filesystem": {"denyRead": fs["denyRead"], "denyWrite": fs["denyWrite"]},
+        # "**/.env*" is left to Senti's rules here: Seatbelt also denies metadata, which breaks tree walkers such as pytest collection
+        "filesystem": {"denyRead": [p for p in fs["denyRead"] if not p.startswith("**/.env")], "denyWrite": fs["denyWrite"]},
         "network": {"allowedDomains": [d for d in net["allowedDomains"] if d != "*"],
                     "deniedDomains": net.get("deniedDomains", []),
                     "allowUnixSockets": net["allowUnixSockets"],

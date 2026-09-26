@@ -220,6 +220,7 @@ def test_install_claude_with_sandbox(tmp_path):
     p = installers.install_claude(str(tmp_path), sandbox=srt)
     cfg = json.loads(p.read_text())
     assert cfg["sandbox"]["enabled"] and "~/.ssh" in cfg["sandbox"]["filesystem"]["denyRead"]
+    assert not any(p.startswith("**/.env") for p in cfg["sandbox"]["filesystem"]["denyRead"])
     assert cfg["sandbox"]["network"]["allowUnixSockets"] and cfg["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("claude pre")
     installers.uninstall_claude(str(tmp_path))
     assert "PreToolUse" not in json.loads(p.read_text()).get("hooks", {})
