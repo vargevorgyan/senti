@@ -1,0 +1,4 @@
+{"hooks": {
+  "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/ABSOLUTE/PATH/senti/prototype/engine/senti-hook /tmp/senti-proto.sock", "timeout": 30}]}],
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/ABSOLUTE/PATH/senti/prototype/engine/senti-hook /tmp/senti-proto.sock"}]}]
+}}

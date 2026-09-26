@@ -14,3 +14,11 @@ Packages/
 # Env / secrets
 .env
 *.local
+
+# Prototype runtime artifacts
+prototype/engine/webapp/
+prototype/engine/realrun/
+prototype/engine/senti-hook
+prototype/engine/*.jsonl
+prototype/engine/*.log
+.venv*/

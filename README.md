@@ -13,19 +13,22 @@ All analysis runs on a **local LLM** (via Ollama), so none of your monitored act
 ## Architecture (MVP)
 
 ```
-Senti.app (SwiftUI, menu bar)
- ├─ Local server :7777  ◄── Claude Code PreToolUse hook / MCP proxy
- ├─ RuleEngine          instant hard blocks (rm -rf ~, secrets → unknown host, …)
- ├─ LLMJudge  ───────►  Ollama :11434 (local)
- ├─ Approval popup      "Allow / Block" with a plain-language explanation
- └─ Activity log
+Claude Code · Codex · OpenCode ──► senti-hook (Swift) ──Unix socket──► Senti engine
+                                                                  ├─ cache → rules → detectors
+                                                                  ├─ LLM judge: local Qwen3-4B (MLX) or corporate model
+                                                                  └─ allow / ask (popup) / block
+Commands run inside a per-agent OS sandbox (sandbox-runtime) as the backstop.
 ```
 
 ## Stack
 
 - Swift 6 / SwiftUI (macOS 14+)
-- [Ollama](https://ollama.com) for the local model
-- Claude Code hooks + MCP proxy for interception
+- Local judge: Qwen3-4B-Instruct (4-bit) via MLX
+- Agent hooks/plugins (Claude Code, Codex CLI, OpenCode) + OS sandbox (anthropics/sandbox-runtime)
+
+## Knowledge base
+
+Full project knowledge (business idea, architecture, decisions, benchmarks, roadmap) is in [`.okf/`](.okf/index.md) — start with [`.okf/getting-started.md`](.okf/getting-started.md).
 
 ## Status
 

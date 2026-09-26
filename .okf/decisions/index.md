@@ -1,0 +1,11 @@
+# Decisions (ADRs)
+
+* [ADR-001: Native Swift macOS app for the MVP](adr-001-native-swift-macos-app.md) - The MVP is a native SwiftUI menu-bar app with an in-process or sidecar engine, chosen by the team over Tauri, Electron and SwiftUI+Python.
+* [ADR-002: Hybrid cascade, not LLM-only or rules-only](adr-002-hybrid-cascade.md) - Decisions use rules and detectors first and a local LLM only for the grey zone, because LLM-only is too slow and rules-only prompts too often and misses obfuscated scripts.
+* [ADR-003: Qwen3-4B-Instruct (4-bit, MLX) as the local judge](adr-003-qwen3-4b-judge.md) - The local judge is Qwen3-4B-Instruct-2507 4-bit on MLX, the smallest tested model that let no dangerous action through.
+* [ADR-004: Do not fork HOL Guard; borrow rules and adapters](adr-004-do-not-fork-hol-guard.md) - Senti is built fresh in Swift and borrows HOL Guard's Apache-2.0 rule catalogs, fixtures and agent adapters with attribution instead of forking.
+* [ADR-005: Reject Laya as the command judge](adr-005-reject-laya.md) - Laya was rejected for command and access limiting because it missed dangerous actions, gave no explanations and was slower on M1 than claimed.
+* [ADR-006: Profiles cached locally, pushed from the backend](adr-006-profiles-cached-locally.md) - Hooks never call the organization backend per action; the local Senti agent holds signed, cached profiles pushed on change, and routes grey-zone decisions to a local or corporate judge per profile.
+* [ADR-007: OS sandbox as the enforcement backstop](adr-007-sandbox-backstop.md) - Every agent's commands run under an OS-level sandbox (sandbox-runtime / Seatbelt) with per-agent file and network limits, because hooks cannot see inside running code.
+* [ADR-008: Demo agents are Claude Code, Codex CLI and OpenCode](adr-008-demo-agents.md) - The demo must show Claude (Claude Code), ChatGPT (Codex CLI) and local models (OpenCode) protected by the same engine.
+* [ADR-009: Name, repository and visibility](adr-009-name-and-repo.md) - The project is named Senti; the GitHub repo vargevorgyan/senti is private with collaborator progerg.
