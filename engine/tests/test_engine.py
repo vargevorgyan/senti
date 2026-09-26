@@ -210,3 +210,16 @@ def test_patch_delete_then_add_is_overwrite():
     from senti.patch import patch_to_actions
     acts = patch_to_actions("*** Begin Patch\n*** Delete File: a.py\n*** Add File: a.py\n+print(1)\n*** End Patch")
     assert acts == [("Write", {"file_path": "a.py", "content": "print(1)"})]
+
+
+def test_install_claude_with_sandbox(tmp_path):
+    import json
+    from senti import installers, sandbox
+    from senti.profiles import PERSONAL_PROFILE
+    srt = sandbox.srt_settings(PERSONAL_PROFILE, "claude", str(tmp_path))
+    p = installers.install_claude(str(tmp_path), sandbox=srt)
+    cfg = json.loads(p.read_text())
+    assert cfg["sandbox"]["enabled"] and "~/.ssh" in cfg["sandbox"]["filesystem"]["denyRead"]
+    assert cfg["sandbox"]["network"]["allowUnixSockets"] and cfg["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("claude pre")
+    installers.uninstall_claude(str(tmp_path))
+    assert "PreToolUse" not in json.loads(p.read_text()).get("hooks", {})

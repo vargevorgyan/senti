@@ -42,7 +42,7 @@ Legend: [x] done · [~] partial · [ ] todo
 - [x] FastAPI server over Unix socket (0600), refuses to steal a live socket
 - [x] Swift hook client (HTTP/UDS, fail closed per agent; Codex explicit deny) + Python fallback client
 - [x] Installers (Claude Code settings, Codex hooks.json, OpenCode plugin) with backups; LaunchAgent (`senti service install`)
-- [~] Sandbox: per-agent srt settings from the profile, `senti sandbox`, `senti run` — **not automatic** yet when `features.sandbox` is on
+- [x] Sandbox: per-agent srt settings from the profile, `senti sandbox`, `senti run`, `senti shell-init` wrappers, `senti install claude --sandbox` (Claude Code built-in sandbox) — verified live
 - [x] Undo / time machine (APFS clones), Honeytokens, Supply-chain check, Post-read injection scanning (+ tainted sessions), Task scope contract (opt-in)
 - [x] Self-protection (Senti home, agent hook configs, launchctl/pkill Senti)
 - [x] "Ask" handling: Claude native prompt; macOS dialog for Codex/OpenCode (Always allow → allowlist); owner/admin approvals via backend
@@ -71,7 +71,7 @@ Legend: [x] done · [~] partial · [ ] todo
 
 ## Remaining / next steps (pick up here)
 
-1. **Automatic sandboxing**: when a profile has `features.sandbox`, make installers launch agents through `senti run` (shell alias or wrapper) and enable Claude Code's built-in sandbox settings.
+1. **Enforce `features.sandbox` per device**: today the admin flag is advisory; the engine could refuse (ask) actions from agents not started under a sandbox.
 2. **Secret brokering** and a **local model gateway** for DIY agents (roadmap items not started).
 3. **Per-agent identity tokens + peer verification** on the socket (`LOCAL_PEERPID`).
 4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): pass static facts (no network, project-only writes) or few-shot examples in the cached prompt.

@@ -259,6 +259,8 @@ class Engine:
             action_view["file_path"] = short(expand(a.input.get("file_path", ""), a.cwd))
         static = {k: v for k, v in facts.items() if v and k in {"net", "reads_sensitive", "hosts", "unknown", "outside_project",
                                                                 "config_like", "run_later", "sudo", "deletes", "resolved"}}
+        if script_text:
+            static["script"] = script_facts(script_text)
         r = await self.judge(profile, task, action_view, script_text, static)
         self.stats["llm"] += 1
         if r.error and not r.verdict == "block":
@@ -468,6 +470,18 @@ class Engine:
             self.audit.append(rec)
         except Exception:
             pass
+
+
+def script_facts(text: str) -> dict:
+    """Cheap static facts about script content, so the judge doesn't have to guess (reduces over-cautious asks)."""
+    from .rules import SCRIPT_NET, SCRIPT_SENSITIVE
+    return {
+        "uses_network": bool(SCRIPT_NET.search(text) or re.search(r"\brequests\.|urllib|http[s]?://", text)),
+        "reads_secret_files": bool(SCRIPT_SENSITIVE.search(text)),
+        "deletes_files": bool(re.search(r"rmtree|os\.remove|unlink|\brm\s+-|fs\.rm|rimraf", text)),
+        "runs_subprocesses": bool(re.search(r"subprocess|os\.system|child_process|exec\(|popen", text, re.I)),
+        "touches_home_dir": bool(re.search(r"expanduser|os\.environ\[.HOME.\]|Path\.home|homedir\(\)|~/", text)),
+    }
 
 
 def _summarize(a: Action) -> dict:

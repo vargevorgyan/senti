@@ -38,7 +38,16 @@ For Claude Code, its built-in sandbox (same srt) can be enabled; for other agent
 profile `files.deny` → `denyRead`; project, `/tmp`, the agent's own state dir → `allowWrite`; Senti and hook configs →
 `denyWrite`; base registries + agent API hosts + profile `network.allow` → `allowedDomains`; the Senti socket in
 `allowUnixSockets` so hooks still reach the engine from inside). `senti run --agent codex -- codex …` launches through srt.
-Profiles carry a `features.sandbox` flag for the admin to require it; launching agents through `senti run` is not yet automatic.
+Per agent (verified 2026-09-27):
+
+- **Claude Code:** `senti install claude --sandbox` writes Claude Code's built-in Bash sandbox block (`sandbox.enabled`,
+  `failIfUnavailable`, `filesystem.denyRead/denyWrite`, `network.allowedDomains/deniedDomains/allowUnixSockets/strictAllowlist`)
+  derived from the same profile. Tested live: commands run sandboxed, hooks still reach Senti.
+- **OpenCode (and any CLI agent):** `eval "$(senti shell-init --agents opencode)"` defines a shell function that starts the agent
+  under `senti run` (srt). Tested: `.env` unreadable, home writes denied, `example.com` blocked, `pypi.org` allowed.
+- **Codex:** keeps its own command sandbox (`-s workspace-write`); wrapping the whole Codex process in Seatbelt breaks Keychain-based login.
+
+Profiles carry `features.sandbox` so admins can state the requirement; enforcing it per device is still manual.
 
 # Measured
 

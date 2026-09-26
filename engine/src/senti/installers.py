@@ -66,12 +66,29 @@ def claude_settings_path(project: str | None) -> Path:
     return Path(project) / ".claude" / "settings.local.json" if project else HOME / ".claude" / "settings.json"
 
 
-def install_claude(project: str | None = None) -> Path:
+def claude_sandbox_block(srt: dict) -> dict:
+    """Translate Senti's srt settings into Claude Code's built-in Bash sandbox settings."""
+    net, fs = srt["network"], srt["filesystem"]
+    return {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "filesystem": {"denyRead": fs["denyRead"], "denyWrite": fs["denyWrite"]},
+        "network": {"allowedDomains": [d for d in net["allowedDomains"] if d != "*"],
+                    "deniedDomains": net.get("deniedDomains", []),
+                    "allowUnixSockets": net["allowUnixSockets"],
+                    "strictAllowlist": "*" not in net["allowedDomains"]},
+    }
+
+
+def install_claude(project: str | None = None, sandbox: dict | None = None) -> Path:
     p = claude_settings_path(project)
     p.parent.mkdir(parents=True, exist_ok=True)
     cfg = json.loads(p.read_text()) if p.exists() else {}
     _backup(p)
-    p.write_text(json.dumps(_merge_hooks(cfg, "claude", "Read|WebFetch|Bash|Grep|mcp__.*"), indent=2))
+    cfg = _merge_hooks(cfg, "claude", "Read|WebFetch|Bash|Grep|mcp__.*")
+    if sandbox is not None:
+        cfg["sandbox"] = claude_sandbox_block(sandbox)
+    p.write_text(json.dumps(cfg, indent=2))
     return p
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -91,8 +92,18 @@ def cmd_install(a) -> int:
         installers.build_hook()
     agents = ["claude", "codex", "opencode"] if a.agent == "all" else [a.agent]
     for ag in agents:
+        if ag == "claude" and a.sandbox:
+            from . import sandbox as sbx
+            from .rules import project_root
+            srt = sbx.srt_settings(_profile_for("claude"), "claude", project_root(a.project or os.getcwd()))
+            p = installers.install_claude(a.project, sandbox=srt)
+            print(f"  {ag:9s} → {p} (with Claude Code's built-in Bash sandbox from the active profile)")
+            continue
         p = installers.INSTALL[ag](a.project)
         print(f"  {ag:9s} → {p}")
+    if a.sandbox:
+        print("  sandbox: Codex runs commands in its own sandbox (use -s workspace-write); for OpenCode add "
+              '`eval "$(senti shell-init)"` to your shell profile so it starts inside Senti\'s sandbox.')
     if "codex" in agents:
         print("  note: Codex asks you to trust new hooks once (run `codex`, then /hooks). For `codex exec` use "
               "--dangerously-bypass-hook-trust in tests.")
@@ -229,6 +240,19 @@ def cmd_run(a) -> int:
     return subprocess.call(sandbox.command(p, argv))
 
 
+def cmd_shell_init(a) -> int:
+    """Print shell functions that launch agents inside their Senti sandbox (eval "$(senti shell-init)")."""
+    exe = str(Path(sys.executable).with_name("senti"))
+    for agent in a.agents.split(","):
+        agent = agent.strip()
+        path = shutil.which(agent) if agent else None
+        if path:
+            print(f'{agent}() {{ "{exe}" run --agent {agent} -- "{path}" "$@"; }}')
+        elif agent:
+            print(f"# senti: {agent} not found on PATH, not wrapped")
+    return 0
+
+
 def cmd_check(a) -> int:
     body = {"agent": a.agent, "tool": a.tool, "cwd": a.cwd or os.getcwd(), "session_id": "cli", "task": a.task or ""}
     if a.tool == "Bash":
@@ -261,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("--project", help="install into a project instead of user-wide")
         if name == "install":
             s.add_argument("--rebuild", action="store_true", help="recompile the hook client")
+            s.add_argument("--sandbox", action="store_true", help="also enable OS sandboxing (Claude Code built-in sandbox; hints for others)")
         s.set_defaults(fn=fn)
     s = sub.add_parser("service", help="run Senti at login (LaunchAgent)")
     s.add_argument("action", choices=["install", "uninstall"])
@@ -296,6 +321,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--agent", default="generic")
     s.add_argument("argv", nargs=argparse.REMAINDER)
     s.set_defaults(fn=cmd_run)
+    s = sub.add_parser("shell-init", help='print shell functions that sandbox agents: eval "$(senti shell-init)"')
+    s.add_argument("--agents", default="opencode", help="comma-separated agent commands to wrap (default: opencode)")
+    s.set_defaults(fn=cmd_shell_init)
     s = sub.add_parser("check", help="ask the engine about one action")
     s.add_argument("tool")
     s.add_argument("value")
