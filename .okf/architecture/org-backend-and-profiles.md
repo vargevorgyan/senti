@@ -52,7 +52,7 @@ id: developer
 applies_to: { roles: [engineering], agents: [claude, codex, opencode] }
 rules:
   files:   { allow: [], deny: ["~/.ssh/**", "~/.aws/**", "**/.env*", "/data/customers/**"], ask: [], write: allow, outside_allow: ask }
-  network: { allow: [github.com, pypi.org, "*.corp.internal"], deny: [webhook.site], otherwise: judge }   # allow|ask|block|judge
+  network: { allow: [github.com, pypi.org, "*.corp.internal"], deny: [webhook.site], ask: ["*.prod.corp.internal"], otherwise: judge }   # hosts also from psql/mysql/redis-cli/mongosh
   shell:   { allow: [], deny: ["sudo *", "rm -rf ~*"], ask: ["git push --force*"], otherwise: judge }
   mcp:     { allow: [], deny: [], otherwise: judge }
   packages: check_supply_chain          # check_supply_chain | allow | ask | block
@@ -76,6 +76,12 @@ Seeded profiles: **Developer**, **PM / Product**, **Autonomous agent** (network 
 | `corporate` | company model via backend | stronger model + company context; needs network (unreachable + strict_local → local) |
 | `local_then_corporate` | local first; corporate when local says ask or confidence < 0.8 | best mix |
 | `none` | unclear → ask | more prompts |
+
+# Lesson: encode hard policy as rules, not only judge instructions
+
+In the playground the 3B corporate model first **allowed** `psql -h billing.prod.corp.internal` although the Developer
+instructions say production hosts need approval. Fixes: `network.ask` lists (DB clients' hosts are extracted too) enforce it
+deterministically, and both judge prompts now say policy notes override the model's own judgement (the model then answered ask, p=0.78).
 
 # Security
 

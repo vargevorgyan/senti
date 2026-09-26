@@ -188,6 +188,8 @@ def scan_code(text: str) -> Decision | None:
 
 
 # ---------------------------------------------------------------- shell parsing
+DB_CLIENTS = {"psql", "mysql", "mariadb", "redis-cli", "mongo", "mongosh", "sqlcmd", "clickhouse-client", "cqlsh", "pg_dump",
+              "mysqldump", "mongodump"}
 NET_TOOLS = {"curl", "wget", "nc", "ncat", "netcat", "scp", "rsync", "ftp", "sftp", "ssh", "telnet", "socat", "http", "https"}
 SAFE_PROGRAMS = {"ls", "pwd", "echo", "wc", "which", "whoami", "date", "tree", "diff", "sort", "uniq", "true", "false", "file",
                  "grep", "rg", "head", "tail", "cat", "less", "stat", "du", "df", "basename", "dirname", "jq", "sed", "awk",
@@ -320,6 +322,21 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
         if "guard" in {classify_path(p) for p in redirects}:
             return Decision("block", "Tries to change or switch off Senti's own protection", "L1-rules", "guard_path",
                             severity="critical"), facts
+        if prog in DB_CLIENTS:
+            hosts = []
+            for i, a in enumerate(args):
+                if a in {"-h", "--host", "-H"} and i + 1 < len(args):
+                    hosts.append(args[i + 1])
+                elif a.startswith(("--host=", "-h")) and len(a) > 2 and not a.startswith("--help"):
+                    hosts.append(a.split("=", 1)[-1] if "=" in a else a[2:])
+                m = re.match(r"^[a-z+]+://(?:[^@/]*@)?([^:/?]+)", a)
+                if m:
+                    hosts.append(m.group(1))
+            facts["hosts"] += hosts
+            if hosts and not all(re.fullmatch(r"localhost|127\.0\.0\.1|::1", h) for h in hosts):
+                facts["net"] = True
+            all_safe = False
+            continue
         if prog in NET_TOOLS:
             urls = [a for a in args if re.match(r"^\w+://", a)] or [a for a in args if re.match(r"^[\w.-]+\.[a-z]{2,}(/|$)", a)]
             hosts = [urlparse(u if "://" in u else "http://" + u).hostname or "" for u in urls]

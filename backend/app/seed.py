@@ -20,6 +20,7 @@ DEVELOPER = {
         "network": {"allow": ["github.com", "api.github.com", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org",
                               "*.corp.internal", "docs.python.org", "developer.mozilla.org"], "deny": ["pastebin.com", "transfer.sh",
                                                                                                         "webhook.site"],
+                    "ask": ["*.prod.corp.internal"],
                     "otherwise": "judge"},
         "shell": {"allow": [], "deny": ["sudo *", "rm -rf ~*"], "ask": ["git push --force*", "docker run --privileged*"],
                   "otherwise": "judge"},

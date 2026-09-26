@@ -59,3 +59,16 @@ def test_signature():
     signed["payload"] = payload.replace("ask", "allow")
     with pytest.raises(ValueError):
         verify_bundle(signed, pub)
+
+
+def test_network_ask_covers_db_clients():
+    from senti.rules import check_bash
+    p = {**DEV, "rules": {**DEV["rules"], "network": {**DEV["rules"]["network"], "ask": ["*.prod.corp.internal"]}}}
+    cmd = 'psql -h billing.prod.corp.internal -c "select * from customers"'
+    _, facts = check_bash(cmd, "/tmp", "/tmp")
+    assert "billing.prod.corp.internal" in facts["hosts"]
+    d, _ = evaluate(p, Action("claude", "Bash", {"command": cmd}, "/tmp"), facts, "/tmp")
+    assert d.verdict == "ask" and d.rule == "network_ask"
+    _, facts = check_bash("psql postgres://u:p@api.corp.internal/db", "/tmp", "/tmp")
+    d, _ = evaluate(p, Action("claude", "Bash", {"command": "psql"}, "/tmp"), facts, "/tmp")
+    assert d.verdict == "allow"

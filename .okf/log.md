@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Update**: `network.ask` profile rules + DB-client host extraction; judge prompts make org policy binding after the corporate 3B model allowed a prod-DB query — [Org backend](/architecture/org-backend-and-profiles.md). Sandbox per agent verified — [Sandbox](/architecture/enforcement-sandbox.md).
 * **Decision**: No client UI app; FastAPI engine/backend and React admin panel in Docker — [ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md) supersedes ADR-001.
 * **Creation**: Full build documented — [Code guide](/code-guide.md), [Admin panel](/architecture/admin-panel.md), [Real-agent tests](/research/real-agent-tests.md).
 * **Update**: Architecture concepts rewritten for the implemented system — [System overview](/architecture/system-overview.md), [Hook client](/architecture/hook-client.md), [Decision engine](/architecture/decision-engine.md), [LLM judge](/architecture/llm-judge.md), [Org backend](/architecture/org-backend-and-profiles.md), [Script inspection](/architecture/script-inspection.md), [Sandbox](/architecture/enforcement-sandbox.md).

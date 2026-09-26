@@ -37,7 +37,7 @@ PERSONAL_PROFILE: dict[str, Any] = {
     "applies_to": {"roles": [], "agents": []},
     "rules": {
         "files": {"allow": [], "deny": [], "ask": []},
-        "network": {"allow": [], "deny": [], "otherwise": "judge"},
+        "network": {"allow": [], "deny": [], "ask": [], "otherwise": "judge"},
         "shell": {"allow": [], "deny": [], "ask": [], "otherwise": "judge"},
         "mcp": {"allow": [], "deny": [], "otherwise": "judge"},
         "packages": "check_supply_chain",
@@ -224,8 +224,11 @@ def evaluate(profile: dict, action: Action, facts: dict, project: str) -> tuple[
     for h in hosts:
         if host_matches(h, net.get("deny") or []):
             decisions.append(_d("block", f"Connects to {h}, which the '{name}' profile blocks", "network_deny", "critical"))
+        elif host_matches(h, net.get("ask") or []):
+            decisions.append(_d("ask", f"Connects to {h}; the '{name}' profile needs your approval for that", "network_ask", "warning"))
     if uses_net:
-        if hosts and all(host_matches(h, net.get("allow") or []) for h in hosts) and not facts.get("reads_sensitive"):
+        if hosts and all(host_matches(h, net.get("allow") or []) for h in hosts) and not facts.get("reads_sensitive") \
+                and not any(host_matches(h, net.get("ask") or []) for h in hosts):
             decisions.append(_d("allow", f"Connects only to sites the '{name}' profile allows ({', '.join(sorted(set(hosts)))})",
                                 "network_allow"))
         else:

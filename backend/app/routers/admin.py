@@ -46,6 +46,7 @@ class FileRules(BaseModel):
 class NetRules(BaseModel):
     allow: list[str] = []
     deny: list[str] = []
+    ask: list[str] = []
     otherwise: Otherwise = "judge"
 
 

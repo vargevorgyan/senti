@@ -17,7 +17,7 @@ export interface ProfileData {
   applies_to: { roles: string[]; agents: string[] }
   rules: {
     files: { allow: string[]; deny: string[]; ask: string[]; write?: 'allow' | 'ask' | 'block' | null; outside_allow?: 'ask' | 'block' | 'allow' | null }
-    network: { allow: string[]; deny: string[]; otherwise: Otherwise }
+    network: { allow: string[]; deny: string[]; ask?: string[]; otherwise: Otherwise }
     shell: { allow: string[]; deny: string[]; ask: string[]; otherwise: Otherwise }
     mcp: { allow: string[]; deny: string[]; otherwise: Otherwise }
     packages: 'check_supply_chain' | 'allow' | 'ask' | 'block'

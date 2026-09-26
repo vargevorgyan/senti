@@ -124,6 +124,7 @@ export default function ProfileEditor() {
           <Section id="network" title="Websites and network" lead="Use *.example.com to include subdomains.">
             <Field label="Allowed sites"><ChipInput value={d.rules.network.allow} onChange={v => upd(x => { x.rules.network.allow = v })} placeholder="github.com" /></Field>
             <Field label="Blocked sites"><ChipInput value={d.rules.network.deny} onChange={v => upd(x => { x.rules.network.deny = v })} placeholder="pastebin.com" /></Field>
+            <Field label="Ask first" hint="Also covers database clients such as psql -h, mysql -h and connection URLs."><ChipInput value={d.rules.network.ask ?? []} onChange={v => upd(x => { x.rules.network.ask = v })} placeholder="*.prod.corp.internal" /></Field>
             <Field label="Any other site"><Other label="Any other site" value={d.rules.network.otherwise} onChange={v => upd(x => { x.rules.network.otherwise = v })} /></Field>
           </Section>
 
