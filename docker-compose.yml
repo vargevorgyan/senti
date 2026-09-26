@@ -20,7 +20,8 @@ services:
     volumes:
       - backend-data:/data
     ports:
-      - "${SENTI_BACKEND_PORT:-8000}:8000"
+      # Bound to localhost by default; set SENTI_BIND=0.0.0.0 to let Macs on your network enroll (change the admin password first).
+      - "${SENTI_BIND:-127.0.0.1}:${SENTI_BACKEND_PORT:-8000}:8000"
 
   admin:
     build: ./admin
@@ -29,7 +30,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${SENTI_ADMIN_PORT:-8080}:80"
+      - "${SENTI_BIND:-127.0.0.1}:${SENTI_ADMIN_PORT:-8080}:80"
 
   # The "corporate model": a small open model served by Ollama (CPU inside Docker, fits a 16 GB laptop).
   # Swap for a real company endpoint by setting SENTI_CORP_MODEL_URL / SENTI_CORP_MODEL (or in the admin panel).
@@ -44,7 +45,7 @@ services:
     volumes:
       - ollama-models:/root/.ollama
     ports:
-      - "${SENTI_OLLAMA_PORT:-11434}:11434"
+      - "127.0.0.1:${SENTI_OLLAMA_PORT:-11434}:11434"
     healthcheck:
       test: ["CMD-SHELL", "ollama list | grep -q \"$$CORP_MODEL\""]
       interval: 15s

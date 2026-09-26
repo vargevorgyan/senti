@@ -61,10 +61,14 @@ Legend: [x] done · [~] partial · [ ] todo
 - [x] Playwright e2e (7 tests incl. mobile overflow)
 - [ ] Real logo SVGs (designer's artifact blobs are not downloadable; placeholder icon used)
 
+### Security review (2026-09-27)
+- [x] 20 findings from an adversarial review; all high and most medium fixed with regression tests — see `.okf/research/security-review-2026-09-27.md`
+- [ ] Open: JWT revocation, TLS by default, peer-process verification, `github.com` WebFetch trust
+
 ### Infra / QA / docs
 - [x] docker-compose (backend, admin, ollama + model pull, healthchecks), `.env.example`
 - [x] `scripts/e2e_modes.py` — 14/14 live checks (all judge modes, push, overrides, approvals, audit upload)
-- [x] `scripts/simulate.py` — 73 labelled actions: 22/22 dangerous stopped, 96% exact
+- [x] `scripts/simulate.py` — 73 labelled actions: 22/22 dangerous stopped, 97% exact
 - [x] Real agents: Claude Code, Codex CLI, OpenCode (cloud model and local Ollama) — see `.okf/research/real-agent-tests.md`
 - [x] Demo: `demo/make-demo-repo.sh` (poisoned repo, fake secrets)
 - [x] README quickstart, `.okf` updates (ADR-010, code guide, admin panel, real-agent tests, rewritten concepts, log)
@@ -95,3 +99,4 @@ cd admin && npx playwright test
 ## Log
 - 2026-09-27: Board created. Branch `feat/full-build`. Design system copied to `docs/design/`.
 - 2026-09-27: Engine, backend, admin panel, Docker stack built; all judge modes verified end to end (14/14); real Claude Code, Codex, OpenCode sessions pass through Senti; simulation 22/22 dangerous stopped; docs and `.okf` updated.
+- 2026-09-27: Security review fixes (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, bundle binding, backend spoofing, default-password warning). Claude Code built-in sandbox via `install --sandbox`; `network.ask` rules.

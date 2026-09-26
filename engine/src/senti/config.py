@@ -76,3 +76,19 @@ def ensure_dirs() -> Path:
         (home / sub).mkdir(parents=True, exist_ok=True)
     os.chmod(home, 0o700)
     return home
+
+
+def hook_token(create: bool = False) -> str:
+    """Per-install secret the hook presents on the socket, so random same-user processes can't drive the engine."""
+    import secrets
+    p = senti_home() / "hook.token"
+    if p.exists():
+        return p.read_text().strip()
+    if not create:
+        return ""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tok = secrets.token_urlsafe(32)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(tok)
+    return tok

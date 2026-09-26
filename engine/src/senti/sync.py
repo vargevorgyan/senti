@@ -47,6 +47,10 @@ async def fetch_profiles(engine) -> bool:
         r.raise_for_status()
         signed = r.json()
     payload = verify_bundle(signed, s.backend_public_key)  # raises on tampering
+    if payload.get("device_id") not in (None, s.device_id):
+        raise ValueError("profile bundle was signed for another device")
+    if engine.profiles.source in {"backend", "cache"} and payload.get("version", 0) < engine.profiles.bundle_version:
+        raise ValueError("profile bundle is older than the one already applied (rollback refused)")
     ps = bundle_to_set(payload)
     changed = ps.bundle_version != engine.profiles.bundle_version or engine.profiles.source != "backend"
     engine.profiles = ps

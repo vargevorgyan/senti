@@ -38,6 +38,8 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
     if "@" not in email:
         raise HTTPException(422, "a valid email is required")
     user = db.query(User).filter_by(email=email).first()
+    if user is not None and user.role_id != code.role_id:
+        raise HTTPException(403, "this code is for a different role than the existing account; ask an administrator")
     if user is None:
         user = User(email=email, name=email.split("@")[0], role_id=code.role_id)
         db.add(user)
@@ -93,9 +95,10 @@ def ingest(body: EventsIn, dev: Device = Depends(current_device), db: Session = 
         eid = str(e.get("id") or "")
         if not eid or db.get(Event, eid):
             continue
-        ev = Event(id=eid, device_id=dev.id, ts=float(e.get("ts") or time.time()), user_email=e.get("user") or dev.user.email,
+        verdict = e.get("verdict") if e.get("verdict") in {"allow", "ask", "block"} else None
+        ev = Event(id=eid, device_id=dev.id, ts=float(e.get("ts") or time.time()), user_email=dev.user.email,
                    agent=str(e.get("agent", ""))[:64], event=str(e.get("event", "pre_tool"))[:32], tool=str(e.get("tool", ""))[:128],
-                   verdict=e.get("verdict"), layer=str(e.get("layer", ""))[:64], rule=str(e.get("rule", ""))[:128],
+                   verdict=verdict, layer=str(e.get("layer", ""))[:64], rule=str(e.get("rule", ""))[:128],
                    severity=str(e.get("severity", "info"))[:16], reason=str(e.get("reason", ""))[:2000],
                    profile=str(e.get("profile", ""))[:64], session=str(e.get("session", ""))[:128], task=str(e.get("task", ""))[:1000],
                    cwd=str(e.get("cwd", ""))[:500], input=e.get("input") or {}, ms=float(e.get("ms") or 0),

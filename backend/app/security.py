@@ -8,7 +8,7 @@ import secrets
 import time
 
 import jwt
-from fastapi import Depends, Header, HTTPException, Query
+from fastapi import Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -64,8 +64,11 @@ def _decode(token: str) -> dict:
         raise HTTPException(401, "invalid or expired token")
 
 
-def current_admin(authorization: str = Header(default=""), token: str = Query(default=""), db: Session = Depends(get_db)) -> Admin:
-    raw = authorization.removeprefix("Bearer ").strip() or token  # EventSource cannot set headers → ?token=
+def current_admin(request: Request, authorization: str = Header(default=""), token: str = Query(default=""),
+                  db: Session = Depends(get_db)) -> Admin:
+    raw = authorization.removeprefix("Bearer ").strip()
+    if not raw and token and request.url.path.endswith("/admin/stream"):
+        raw = token  # EventSource cannot set headers; the query token is accepted for the SSE stream only
     if not raw:
         raise HTTPException(401, "not signed in")
     claims = _decode(raw)

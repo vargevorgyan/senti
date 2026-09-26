@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { api, token } from './api'
-import { Icon, LiveProvider, ToastProvider, useLive, useLiveEvent } from './components/ui'
+import { Icon, LiveProvider, ToastProvider, useLive, useLiveEvent, useToast } from './components/ui'
 import Activity from './pages/Activity'
 import Approvals from './pages/Approvals'
 import ChangeLog from './pages/ChangeLog'
@@ -37,6 +37,15 @@ function Shell({ onLogout }: { onLogout: () => void }) {
     refresh()
   }, [])
   useLiveEvent(m => { if (m.type === 'approval') refresh() })
+  const toast = useToast()
+  const changePassword = async () => {
+    const current = window.prompt('Current password')
+    if (!current) return
+    const next = window.prompt('New password (at least 8 characters)')
+    if (!next) return
+    try { await api('/auth/password', { method: 'PUT', body: { current, new: next } }); toast('Password changed.') }
+    catch (e: any) { toast(e.message, true) }
+  }
   const nav = [
     { to: '/', icon: 'home', label: 'Overview', end: true },
     { to: '/activity', icon: 'activity', label: 'Activity' },
@@ -58,6 +67,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         </nav>
         <div className="rail-foot">
           <span>{me?.email}</span>
+          <button type="button" onClick={changePassword}>Change password</button>
           <button type="button" onClick={onLogout}>Sign out</button>
         </div>
       </aside>

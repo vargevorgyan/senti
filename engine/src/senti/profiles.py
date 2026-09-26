@@ -50,6 +50,15 @@ PERSONAL_PROFILE: dict[str, Any] = {
 }
 
 
+STRICT_PROFILE: dict[str, Any] = {
+    **PERSONAL_PROFILE,
+    "id": "strict-offline",
+    "name": "Strict (no verified organization profile)",
+    "description": "Used when this Mac is enrolled but has no valid signed profile yet: unknown sites and packages need a yes.",
+    "rules": {**PERSONAL_PROFILE["rules"], "network": {"allow": [], "deny": [], "ask": [], "otherwise": "ask"}, "packages": "ask"},
+}
+
+
 def glob_to_regex(pat: str) -> re.Pattern:
     pat = pat.replace("\\", "/")
     out, i = "", 0
@@ -82,44 +91,96 @@ def path_matches(path: str, patterns: list[str], cwd: str = "/") -> str | None:
     return None
 
 
+def _normalised_segments(cmd: str) -> list[str]:
+    """Each command segment as '<program basename> <args>' with sudo/env/command wrappers and git globals removed."""
+    from .rules import program, split_segments, substitutions
+    out = []
+    for c in [cmd, *substitutions(cmd)]:
+        for seg in split_segments(c):
+            prog, args, _ = program(seg)
+            if not prog:
+                continue
+            if prog == "git":
+                i = 0
+                while i < len(args) and args[i].startswith("-"):
+                    i += 2 if args[i] in {"-C", "-c", "--git-dir", "--work-tree"} else 1
+                args = args[i:]
+            out.append(" ".join([prog, *args]))
+    return out
+
+
 def cmd_matches(cmd: str, patterns: list[str]) -> str | None:
     norm = " ".join(cmd.split())
+    segs = _normalised_segments(cmd)
     for p in patterns or []:
         if p.startswith("re:"):
-            if re.search(p[3:], norm):
+            if re.search(p[3:], norm) or any(re.search(p[3:], sg) for sg in segs):
                 return p
-        elif fnmatch.fnmatchcase(norm, p) or fnmatch.fnmatchcase(norm, p + " *") or re.search(
-                r"(^|[;&|]\s*)" + re.escape(p.rstrip(" *")) + r"(\s|$)", norm) and p.endswith("*"):
-            return p
+            continue
+        stem = p.rstrip("*").strip()
+        for cand in [norm, *segs]:
+            if fnmatch.fnmatchcase(cand, p) or fnmatch.fnmatchcase(cand, p + " *") or cand == stem or \
+                    (stem and (cand.startswith(stem + " ") or (p.endswith("*") and cand.startswith(stem)))):
+                return p
     return None
 
 
+NONE_ALLOWED = "__senti_nothing__"
+_RANKS = {
+    "otherwise": {"allow": 0, "judge": 1, "ask": 2, "block": 3},
+    "outside_allow": {"allow": 0, "ask": 1, "block": 2},
+    "write": {"allow": 0, "ask": 1, "block": 2},
+    "packages": {"allow": 0, "check_supply_chain": 1, "ask": 2, "block": 3},
+    "ask_goes_to": {"user": 0, "owner": 1, "admin": 2},
+}
+
+
+def _stricter(kind: str, a, b):
+    r = _RANKS[kind]
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return b if r.get(b, 1) > r.get(a, 1) else a
+
+
 def merge_override(base: dict, over: dict) -> dict:
-    """An agent override *narrows* the role profile: lists are unioned for deny/ask, 'otherwise' takes the stricter."""
+    """An agent override can only *narrow* the role profile (delegation rule: an agent never gets more than its user).
+
+    deny/ask lists are unioned; allow lists are intersected (an empty intersection allows nothing); every scalar takes
+    the stricter value; protective features can be switched on but not off; the judge mode may be changed.
+    """
     import copy
     out = copy.deepcopy(base)
-    rank = {"allow": 0, "judge": 1, "ask": 2, "block": 3}
     for sect, rules in (over.get("rules") or {}).items():
         if not isinstance(rules, dict):
-            out["rules"][sect] = rules
+            if sect == "packages":
+                out["rules"]["packages"] = _stricter("packages", out["rules"].get("packages", "check_supply_chain"), rules)
             continue
         dst = out["rules"].setdefault(sect, {})
         for k, v in rules.items():
             if k in {"deny", "ask"}:
-                dst[k] = list(dict.fromkeys((dst.get(k) or []) + list(v)))
+                dst[k] = list(dict.fromkeys((dst.get(k) or []) + list(v or [])))
             elif k == "allow":
-                # narrowing: if the override lists an allow-list, only its entries stay allowed
-                dst[k] = [x for x in (dst.get(k) or []) if x in v] if dst.get(k) else list(v)
-            elif k == "otherwise":
-                dst[k] = v if rank.get(v, 1) > rank.get(dst.get(k, "judge"), 1) else dst.get(k, "judge")
-            else:
-                dst[k] = v
-    if "judge" in over:
-        out["judge"] = {**out["judge"], **over["judge"]}
-    if "features" in over:
-        out["features"] = {**out.get("features", {}), **over["features"]}
-    if "approvals" in over:
-        out["approvals"] = {**out.get("approvals", {}), **over["approvals"]}
+                if dst.get(k):
+                    inter = [x for x in dst[k] if x in (v or [])]
+                    dst[k] = inter or [NONE_ALLOWED]
+                elif sect == "files" and v:
+                    dst[k] = list(v)
+                elif sect != "files":
+                    dst[k] = [x for x in (dst.get(k) or []) if x in (v or [])]
+            elif k in _RANKS:
+                dst[k] = _stricter(k, dst.get(k), v)
+            # other keys are not overridable
+    if "judge" in over and isinstance(over["judge"], dict) and over["judge"].get("mode"):
+        out["judge"] = {**out.get("judge", {}), "mode": over["judge"]["mode"]}
+    feats = dict(out.get("features") or {})
+    for k, v in (over.get("features") or {}).items():
+        feats[k] = bool(feats.get(k)) and bool(v) if k == "scope_contract" else bool(feats.get(k)) or bool(v)
+    out["features"] = feats
+    if isinstance(over.get("approvals"), dict) and over["approvals"].get("ask_goes_to"):
+        cur = (out.get("approvals") or {}).get("ask_goes_to", "user")
+        out["approvals"] = {**(out.get("approvals") or {}), "ask_goes_to": _stricter("ask_goes_to", cur, over["approvals"]["ask_goes_to"])}
     return out
 
 
@@ -158,7 +219,7 @@ def cache_path() -> Path:
     return senti_home() / "profiles.signed.json"
 
 
-def load_cached(public_key_b64: str) -> ProfileSet | None:
+def load_cached(public_key_b64: str, device_id: str = "") -> ProfileSet | None:
     p = cache_path()
     if not p.exists():
         return None
@@ -166,6 +227,8 @@ def load_cached(public_key_b64: str) -> ProfileSet | None:
         payload = verify_bundle(json.loads(p.read_text()), public_key_b64)
     except Exception:
         return None  # tampered cache is ignored (never trusted)
+    if device_id and payload.get("device_id") not in (None, device_id):
+        return None  # a bundle signed for another device (possibly another role) is not accepted
     ps = bundle_to_set(payload)
     ps.source = "cache"
     return ps
@@ -268,7 +331,8 @@ def evaluate(profile: dict, action: Action, facts: dict, project: str) -> tuple[
         decisions.append(_d(v, f"The '{name}' profile {'does not allow' if v == 'block' else 'asks before'} changing files",
                             f"files_write_{v}", "warning"))
     for p in paths:
-        if files.get("allow") and not path_matches(p, files.get("allow"), cwd) and not p.startswith(("/tmp", "/private/tmp")):
+        if files.get("allow") and not path_matches(p, [x for x in files.get("allow") if x != NONE_ALLOWED], cwd) \
+                and not p.startswith(("/tmp", "/private/tmp")):
             if files.get("outside_allow", "ask") in {"ask", "block"}:
                 v = files.get("outside_allow", "ask")
                 decisions.append(_d(v, f"Touches {short(p)}, outside the folders the '{name}' profile allows", "files_outside",

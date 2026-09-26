@@ -22,7 +22,9 @@ SOCK = os.environ.get("SENTI_SOCKET", os.path.expanduser("~/.senti/senti.sock"))
 PROJ = os.environ.get("SENTI_E2E_PROJECT", "/tmp/senti-e2e-proj")
 ADMIN = (os.environ.get("SENTI_ADMIN_EMAIL", "admin@senti.local"), os.environ.get("SENTI_ADMIN_PASSWORD", "senti-admin"))
 
-engine = httpx.Client(transport=httpx.HTTPTransport(uds=SOCK), base_url="http://senti", timeout=120)
+_home = os.environ.get("SENTI_HOME", os.path.dirname(SOCK) if SOCK.endswith("senti.sock") else os.path.expanduser("~/.senti"))
+_tok = open(os.path.join(_home, "hook.token")).read().strip() if os.path.exists(os.path.join(_home, "hook.token")) else ""
+engine = httpx.Client(transport=httpx.HTTPTransport(uds=SOCK), base_url="http://senti", timeout=120, headers={"X-Senti-Token": _tok})
 be = httpx.Client(base_url=BACKEND, timeout=60)
 tok = be.post("/api/v1/auth/login", json={"email": ADMIN[0], "password": ADMIN[1]}).json()["token"]
 H = {"Authorization": f"Bearer {tok}"}

@@ -126,8 +126,10 @@ def overview(admin: Admin = Auth, db: Session = Depends(get_db)):
     devices = db.query(Device).filter_by(revoked=False).all()
     recent_blocks = db.query(Event).filter(Event.verdict == "block").order_by(Event.ts.desc()).limit(8).all()
     ms = sorted(e.ms for e in evs if e.ms)
+    from ..security import check_password
     return {
         "org": settings.org_name,
+        "default_password": check_password("senti-admin", admin.password_hash),
         "devices": {"total": len(devices), "online": sum(1 for d in devices if now - d.last_seen < ONLINE_S)},
         "users": db.query(func.count(User.id)).scalar(),
         "profiles": db.query(func.count(Profile.id)).scalar(),

@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import adapters, undo
-from .config import Settings, ensure_dirs, socket_path
+from .config import Settings, ensure_dirs, hook_token, socket_path
 from .engine import Engine
 
 AGENTS = {"claude", "codex", "opencode", "generic"}
@@ -49,6 +49,16 @@ def create_app(engine: Engine) -> FastAPI:
 
     app = FastAPI(title="Senti engine", lifespan=lifespan)
     app.state.engine = engine
+    token = hook_token(create=True)
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next):
+        import hmac
+        if not hmac.compare_digest(request.headers.get("x-senti-token", ""), token):
+            if request.url.path.startswith("/v1/hook/"):
+                return PlainTextResponse("missing or wrong Senti token", status_code=401)  # hook fails closed on non-200
+            return JSONResponse({"detail": "missing or wrong Senti token"}, status_code=401)
+        return await call_next(request)
 
     @app.post("/v1/hook/{agent}")
     async def hook(agent: str, request: Request):

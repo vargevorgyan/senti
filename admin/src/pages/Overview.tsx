@@ -26,6 +26,11 @@ export default function Overview() {
   const quiet = o.events_24h === 0
   return (
     <div className="page">
+      {o.default_password && (
+        <div className="al ask" role="alert">
+          <div><h3>Change the default admin password</h3><p>This panel still uses the password it shipped with. Use “Change password” at the bottom of the sidebar before anyone else can reach it.</p></div>
+        </div>
+      )}
       <section className="watch">
         <div>
           {quiet ? (

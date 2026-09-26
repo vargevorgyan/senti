@@ -129,3 +129,24 @@ def test_logprob_parsing():
                                                                            {"token": "allow", "logprob": -5}]}]}
     p = _probs_from_logprobs(lp)
     assert p and p["block"] > 0.8
+
+
+def test_event_user_cannot_be_spoofed(client, admin_headers, device):
+    client.post("/api/v1/events", headers=device["headers"], json={"events": [
+        {"id": "sp1", "user": "ceo@acme.test", "verdict": "totally-fine", "agent": "claude", "tool": "Bash"}]})
+    e = client.get("/api/v1/admin/events", headers=admin_headers).json()["items"][0]
+    assert e["user"] == "dev@acme.test" and e["verdict"] is None
+
+
+def test_query_token_only_for_stream(client, admin_headers):
+    tok = admin_headers["Authorization"].split()[1]
+    assert client.get(f"/api/v1/admin/users?token={tok}").status_code == 401
+
+
+def test_enroll_cannot_switch_role(client, admin_headers, device):
+    r = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "automation"})
+    assert client.post("/api/v1/devices/enroll", json={"code": r.json()["code"], "user_email": "dev@acme.test"}).status_code == 403
+
+
+def test_default_password_flag(client, admin_headers):
+    assert client.get("/api/v1/admin/overview", headers=admin_headers).json()["default_password"] is True

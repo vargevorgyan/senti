@@ -11,6 +11,10 @@ def main() -> None:
     home = os.environ.get("SENTI_HOME", os.path.expanduser("~/.senti"))
     path = os.environ.get("SENTI_SOCKET", os.path.join(home, "senti.sock"))
     data = sys.stdin.buffer.read()
+    try:
+        token = open(os.path.join(home, "hook.token")).read().strip()
+    except OSError:
+        token = ""
 
     def fail(why: str):
         if event != "pre":
@@ -29,7 +33,7 @@ def main() -> None:
         s.settimeout(int(os.environ.get("SENTI_HOOK_TIMEOUT", "290")))
         s.connect(path)
         s.sendall(f"POST /v1/hook/{agent} HTTP/1.1\r\nHost: senti\r\nContent-Type: application/json\r\n"
-                  f"Content-Length: {len(data)}\r\nConnection: close\r\n\r\n".encode() + data)
+                  f"X-Senti-Token: {token}\r\nContent-Length: {len(data)}\r\nConnection: close\r\n\r\n".encode() + data)
         buf = b""
         while chunk := s.recv(65536):
             buf += chunk

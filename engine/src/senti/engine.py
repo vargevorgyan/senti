@@ -24,7 +24,7 @@ from .judge.local import LocalJudge
 from .judge.remote import RemoteJudge
 from .models import SEVERITY, Action, Decision, strictest
 from .patch import patch_to_actions
-from .profiles import ProfileSet, evaluate, load_cached
+from .profiles import STRICT_PROFILE, ProfileSet, evaluate, load_cached
 from .rules import (CODE_EXT, check_action, classify_path, expand, find_secrets, follow_imports, inside, project_root,
                     read_script, redact, scan_code, short)
 from .supply_chain import check_package
@@ -50,9 +50,10 @@ class Engine:
         self.backend_error = ""
         self.profiles = ProfileSet()
         if self.settings.enrolled:
-            cached = load_cached(self.settings.backend_public_key)
-            if cached:
-                self.profiles = cached
+            cached = load_cached(self.settings.backend_public_key, self.settings.device_id)
+            # no valid signed cache while enrolled → strict offline profile, never the looser personal one
+            self.profiles = cached or ProfileSet(profiles={"strict-offline": STRICT_PROFILE}, default="strict-offline",
+                                                 source="strict-fallback")
             self.backend_state = "unreachable"  # until the first successful sync
         self.local = LocalJudge(self.settings.local_model, self.settings.allow_threshold, self.settings.unload_after_idle_s)
         if not (use_llm and self.settings.local_judge):
@@ -233,12 +234,17 @@ class Engine:
         if self.allowlist.get(self.action_key(a, project)):
             return Decision("allow", "You chose 'Always allow' for this before", "L0-allowlist", "always_allow")
 
-        key = hashlib.sha256(json.dumps([task, a.tool, a.input, script_text, profile.get("id"), profile.get("version")],
+        if facts.get("personal_arg"):
+            return Decision("ask", "Runs a script on one of your personal folders (Documents, Desktop, ...)", "L1-rules", "personal_arg",
+                            severity="warning")
+        key = hashlib.sha256(json.dumps([task, a.agent, a.tool, a.input, a.cwd, project, script_text, profile.get("id"),
+                                         profile.get("version"), self.profiles.bundle_version],
                                         sort_keys=True, default=str).encode()).hexdigest()
         if key in self.cache:
             c = self.cache[key]
             return Decision(c.verdict, c.reason, "L0-cache", c.rule, c.p, c.severity)
-        if script_text and a.tool not in {"Write", "Edit", "MultiEdit"}:
+        if script_text and a.tool not in {"Write", "Edit", "MultiEdit"} and not facts.get("script_args") and not facts.get("inline_code") \
+                and len(facts.get("scripts", [])) == 1 and not facts.get("unknown"):
             pk = hashlib.sha256((task + "\0" + script_text).encode()).hexdigest()
             if pk in self.prefetch:
                 try:

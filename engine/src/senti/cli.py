@@ -17,7 +17,9 @@ from .config import Settings, ensure_dirs, senti_home, socket_path
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(transport=httpx.HTTPTransport(uds=socket_path()), base_url="http://senti", timeout=30)
+    from .config import hook_token
+    return httpx.Client(transport=httpx.HTTPTransport(uds=socket_path()), base_url="http://senti", timeout=30,
+                        headers={"X-Senti-Token": hook_token()})
 
 
 def _running() -> bool:

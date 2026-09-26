@@ -19,9 +19,22 @@ func env(_ name: String) -> String? {
 }
 
 let home = env("HOME") ?? "/tmp"
-var sockPath = env("SENTI_SOCKET") ?? (env("SENTI_HOME").map { $0 + "/senti.sock" } ?? home + "/.senti/senti.sock")
+var sockPath = env("SENTI_SOCKET") ?? ((env("SENTI_HOME") ?? home + "/.senti") + "/senti.sock")
 if sockPath.utf8.count > 100 { sockPath = "/tmp/senti-\(getuid()).sock" }
 let timeoutSec = Int(env("SENTI_HOOK_TIMEOUT") ?? "") ?? 290
+let sentiHome = env("SENTI_HOME") ?? home + "/.senti"
+
+// Per-install secret the engine requires on every request (~/.senti/hook.token).
+func readToken() -> String {
+    let fd = open(sentiHome + "/hook.token", O_RDONLY)
+    if fd < 0 { return "" }
+    var b = [UInt8](repeating: 0, count: 256)
+    let n = read(fd, &b, b.count)
+    close(fd)
+    if n <= 0 { return "" }
+    return String(decoding: b[0..<n], as: UTF8.self).filter { !$0.isWhitespace && !$0.isNewline }
+}
+let token = readToken()
 
 func writeErr(_ s: String) {
     let b = Array(s.utf8)
@@ -69,7 +82,7 @@ var tv = timeval(tv_sec: timeoutSec, tv_usec: 0)
 setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
-let header = "POST /v1/hook/\(agent) HTTP/1.1\r\nHost: senti\r\nContent-Type: application/json\r\nX-Senti-Event: \(event)\r\nContent-Length: \(input.count)\r\nConnection: close\r\n\r\n"
+let header = "POST /v1/hook/\(agent) HTTP/1.1\r\nHost: senti\r\nContent-Type: application/json\r\nX-Senti-Event: \(event)\r\nX-Senti-Token: \(token)\r\nContent-Length: \(input.count)\r\nConnection: close\r\n\r\n"
 let request = Array(header.utf8) + input
 var sent = 0
 while sent < request.count {
