@@ -93,7 +93,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus-ring)
 .field .hint { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.grid2.wide-left { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.grid2.wide-left { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 
 /* ---------- surfaces ---------- */

@@ -115,7 +115,7 @@ def overview(admin: Admin = Auth, db: Session = Depends(get_db)):
     by_agent = Counter(e.agent for e in evs)
     by_layer = Counter((e.layer or "").split("-")[0] for e in evs)
     llm = [e for e in evs if (e.layer or "").startswith("L3")]
-    rules = Counter(e.rule for e in evs if e.verdict in {"block", "ask"} and e.rule)
+    rules = Counter(e.rule for e in evs if e.verdict in {"block", "ask"} and e.rule and "/" not in e.rule)
     hours = [0] * 24
     blocks = [0] * 24
     for e in evs:
