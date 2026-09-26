@@ -1,0 +1,61 @@
+# Senti organization side: backend API + admin panel + a small "corporate model".
+# The local engine and hooks run natively on each Mac (never in Docker).
+#
+#   cp .env.example .env   # optional: change passwords / model
+#   docker compose up -d --build
+#   admin panel:  http://localhost:8080   (admin@senti.local / senti-admin by default)
+#   device API:   http://localhost:8000   (senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email you@acme.test)
+name: senti
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: [{path: .env, required: false}]
+    environment:
+      SENTI_DATA_DIR: /data
+      SENTI_CORP_MODEL_URL: ${SENTI_CORP_MODEL_URL:-http://ollama:11434/v1}
+      SENTI_CORP_MODEL: ${SENTI_CORP_MODEL:-qwen2.5:3b}
+      SENTI_CORS_ORIGINS: ${SENTI_CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - backend-data:/data
+    ports:
+      - "${SENTI_BACKEND_PORT:-8000}:8000"
+
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${SENTI_ADMIN_PORT:-8080}:80"
+
+  # The "corporate model": a small open model served by Ollama (CPU inside Docker, fits a 16 GB laptop).
+  # Swap for a real company endpoint by setting SENTI_CORP_MODEL_URL / SENTI_CORP_MODEL (or in the admin panel).
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: "2"
+      CORP_MODEL: ${SENTI_CORP_MODEL:-qwen2.5:3b}
+    entrypoint: ["/bin/sh", "-c", "ollama serve & pid=$!; sleep 3; ollama pull \"$$CORP_MODEL\"; wait $$pid"]
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "${SENTI_OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"$$CORP_MODEL\""]
+      interval: 15s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+
+volumes:
+  backend-data:
+  ollama-models:
