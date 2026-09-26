@@ -22,3 +22,11 @@ prototype/engine/senti-hook
 prototype/engine/*.jsonl
 prototype/engine/*.log
 .venv*/
+
+# Senti build
+engine/hook/senti-hook
+.venv/
+node_modules/
+admin/dist/
+backend/data/
+*.senti-backup-*

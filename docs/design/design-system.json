@@ -1,0 +1,87 @@
+{
+  "v": 3,
+  "assetGroups": {
+    "Icons": {
+      "files": {
+        "alert.svg": {
+          "blob": "579439fda19813b56092a09f8867aa28",
+          "name": "alert.svg",
+          "size": 281,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "Icons",
+      "order": [
+        "alert.svg"
+      ],
+      "tile": "s"
+    },
+    "Logos": {
+      "files": {
+        "senti-app-icon.svg": {
+          "blob": "cb379df7dfab98c90ffaa366a8220e77",
+          "name": "senti-app-icon.svg",
+          "size": 563,
+          "type": "image/svg+xml"
+        },
+        "senti-bark.svg": {
+          "blob": "311ba9534d304084e5934b346895c0dd",
+          "name": "senti-bark.svg",
+          "size": 1397,
+          "type": "image/svg+xml"
+        },
+        "senti-mark-cream.svg": {
+          "blob": "ab9a32f22dad2486424848b59c2824e0",
+          "name": "senti-mark-cream.svg",
+          "size": 502,
+          "type": "image/svg+xml"
+        },
+        "senti-mark.svg": {
+          "blob": "e4826d60b1e078ebea2fe2d11802364f",
+          "name": "senti-mark.svg",
+          "size": 502,
+          "type": "image/svg+xml"
+        },
+        "senti-snarl.svg": {
+          "name": "senti-snarl.svg",
+          "blob": "c892c31ae13214dd1fd0ef5686b25c14",
+          "size": 1568,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "Logos",
+      "order": [
+        "senti-app-icon.svg",
+        "senti-mark.svg",
+        "senti-mark-cream.svg",
+        "senti-bark.svg",
+        "senti-snarl.svg"
+      ],
+      "tile": "l"
+    }
+  },
+  "blobs": {},
+  "createdOnFiles": {
+    "at": "2026-09-26T20:18:47Z",
+    "v": 1
+  },
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "groups": [
+    "Logos",
+    "Icons"
+  ],
+  "lastChange": {
+    "by": "Anahit",
+    "at": "2026-09-26T20:36:28Z",
+    "via": "Claude (claude.ai chat)",
+    "note": "Flipped the bark and snarl marks to face left, for placement in the bottom-right corner."
+  },
+  "layout": "files",
+  "libraries": [],
+  "namespace": "Senti",
+  "sections": {},
+  "title": "Senti"
+}

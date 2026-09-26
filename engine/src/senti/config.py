@@ -1,0 +1,78 @@
+"""Paths and settings for the local Senti engine.
+
+Everything lives under ``SENTI_HOME`` (default ``~/.senti``). Agents must never be allowed to
+write there; the rules layer treats it as a guard path (self-protection).
+"""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+HOME = Path.home()
+
+
+def senti_home() -> Path:
+    return Path(os.environ.get("SENTI_HOME", HOME / ".senti")).expanduser()
+
+
+def socket_path() -> str:
+    # Unix socket paths are limited to 104 bytes on macOS.
+    p = os.environ.get("SENTI_SOCKET") or str(senti_home() / "senti.sock")
+    if len(p.encode()) > 100:
+        p = f"/tmp/senti-{os.getuid()}.sock"
+    return p
+
+
+@dataclass
+class Settings:
+    """Persisted engine settings (``~/.senti/config.json``)."""
+
+    # Org backend (optional). Empty backend_url = personal mode with the built-in profile.
+    backend_url: str = ""
+    device_id: str = ""
+    device_token: str = ""
+    backend_public_key: str = ""  # base64 Ed25519 public key pinned at enrollment
+    org_name: str = ""
+    user_email: str = ""
+    # Local judge
+    local_model: str = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    local_judge: bool = True
+    allow_threshold: float = 0.6
+    unload_after_idle_s: int = 900
+    # Behaviour
+    notifications: bool = True
+    undo_snapshots: bool = True
+    approval_timeout_s: int = 240
+    judge_timeout_s: float = 20.0
+    extra: dict = field(default_factory=dict)
+
+    @classmethod
+    def load(cls) -> "Settings":
+        p = senti_home() / "config.json"
+        if p.exists():
+            data = json.loads(p.read_text())
+            known = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+            return cls(**known)
+        return cls()
+
+    def save(self) -> None:
+        home = senti_home()
+        home.mkdir(parents=True, exist_ok=True)
+        os.chmod(home, 0o700)
+        p = home / "config.json"
+        p.write_text(json.dumps(asdict(self), indent=2))
+        os.chmod(p, 0o600)
+
+    @property
+    def enrolled(self) -> bool:
+        return bool(self.backend_url and self.device_token)
+
+
+def ensure_dirs() -> Path:
+    home = senti_home()
+    for sub in ("", "audit", "snapshots", "sandbox", "bin"):
+        (home / sub).mkdir(parents=True, exist_ok=True)
+    os.chmod(home, 0o700)
+    return home

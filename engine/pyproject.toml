@@ -1,0 +1,39 @@
+[project]
+name = "senti"
+version = "0.1.0"
+description = "Senti: a local guardrail between people and the AI agents on their computer"
+readme = "README.md"
+authors = [
+    { name = "gagik", email = "gagikgrigoryan2005@mail.ru" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.1",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+mlx = [
+    "mlx-lm>=0.31.3",
+]
+
+[project.scripts]
+senti = "senti.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

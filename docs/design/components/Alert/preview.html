@@ -1,0 +1,33 @@
+<!-- @dsCard group="Feedback" height=520 subtitle="Blocked, Ask, Allowed, Info" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Alert — preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&family=DM+Sans:opsz,wght@9..40,400..700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0;background:var(--surface);color:var(--ink);font-family:var(--font-sans);}
+.wrap{padding:var(--space-6);display:grid;gap:var(--space-4);max-width:560px}
+.al{display:flex;gap:var(--space-3);padding:var(--space-4);border-radius:var(--radius-md);align-items:flex-start}
+.al h3{margin:0 0 4px;font-family:var(--font-display);font-size:18px;line-height:24px;font-weight:600}
+.al p{margin:0;font-size:15px;line-height:22px}
+.al code{font-family:var(--font-mono);font-size:13px;padding:1px 6px;border-radius:var(--radius-sm)}
+.ic{flex:none;margin-top:1px}
+.block{background:var(--bark);color:var(--on-bark)}
+.block code{background:rgba(251,246,239,.16)}
+.ask{background:var(--surface-raised);border:1.5px solid var(--terracotta-text);color:var(--ink)}
+.ask .ic,.ask h3{color:var(--terracotta-text)}
+.ask code{background:var(--sand)}
+.btns{display:flex;gap:var(--space-2);margin-top:var(--space-3)}
+.b{font:600 13px/16px var(--font-sans);padding:9px 14px;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--surface-raised);color:var(--ink)}
+.b.pri{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.ok{background:var(--sage-soft);color:var(--sage-text);align-items:center;padding:12px var(--space-4)}
+.ok p{font-weight:500}
+.info{background:var(--sand);color:var(--ink);align-items:center;padding:12px var(--space-4)}
+</style></head>
+<body>
+<div class="wrap">
+<div class="al block" role="alert"><span class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 L22 20.5 H2 Z"/><path d="M12 10 V14"/><path d="M12 17.2 V17.3"/></svg></span><div><h3>I stopped this</h3><p>The agent tried to upload <code>.env</code>, which has 3 API keys, to an unknown website.</p></div></div>
+<div class="al ask" role="alertdialog"><span class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 L22 20.5 H2 Z"/><path d="M12 10 V14"/><path d="M12 17.2 V17.3"/></svg></span><div><h3>Want me to let this through?</h3><p>The agent wants to delete 214 files in <code>Projects/client-app</code>. This can't be undone.</p><div class="btns"><button class="b pri">Block</button><button class="b">Allow once</button></div></div></div>
+<div class="al ok"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 L10 17.5 L19 7"/></svg></span><p>Allowed: agent read 12 files in your project folder.</p></div>
+<div class="al info"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11 V16.5"/><path d="M12 7.6 V7.7"/></svg></span><p>Tip: add a rule so Senti never lets agents touch your Finance folder.</p></div>
+</div>
+</body></html>
