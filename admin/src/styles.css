@@ -93,6 +93,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus-ring)
 .field .hint { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.grid2.wide-left { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 
 /* ---------- surfaces ---------- */
@@ -241,7 +242,10 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
   .watch { grid-template-columns: 1fr; }
   .watch h1 { font-size: 36px; line-height: 42px; }
   .facts { grid-template-columns: repeat(2, 1fr); }
-  .grid2, .grid3, .modes { grid-template-columns: 1fr; }
+  .grid2, .grid2.wide-left, .grid3, .modes { grid-template-columns: 1fr; }
+  .watch .wave { display: none; }
+  .bars .b { grid-template-columns: 96px 1fr 36px; }
+  .table-wrap { max-width: calc(100vw - 32px); }
   .editor { grid-template-columns: 1fr; }
   .toc { display: none; }
   .login { grid-template-columns: 1fr; }

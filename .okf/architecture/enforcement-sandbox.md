@@ -4,7 +4,7 @@ title: Enforcement sandbox (sandbox-runtime)
 description: OS-level file and network limits per agent using Anthropic's sandbox-runtime (macOS Seatbelt), the backstop for everything hooks cannot see.
 tags: [architecture, sandbox, enforcement, security]
 status: stable
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: srt
     resource: https://github.com/anthropics/sandbox-runtime
@@ -31,6 +31,14 @@ proxy for network allowlisting.[^srt]
 
 Senti generates **one profile per agent** from its policy/profile (see [Org backend and profiles](/architecture/org-backend-and-profiles.md)).
 For Claude Code, its built-in sandbox (same srt) can be enabled; for other agents and MCP servers, Senti wraps the launch command.
+
+# In the full build
+
+`senti sandbox --agent codex --show` writes `~/.senti/sandbox/<agent>.srt.json` from the active profile (base secret paths +
+profile `files.deny` → `denyRead`; project, `/tmp`, the agent's own state dir → `allowWrite`; Senti and hook configs →
+`denyWrite`; base registries + agent API hosts + profile `network.allow` → `allowedDomains`; the Senti socket in
+`allowUnixSockets` so hooks still reach the engine from inside). `senti run --agent codex -- codex …` launches through srt.
+Profiles carry a `features.sandbox` flag for the admin to require it; launching agents through `senti run` is not yet automatic.
 
 # Measured
 

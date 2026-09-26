@@ -5,7 +5,7 @@ description: The team's primary dev Mac, installed and missing tools, accounts, 
 tags: [environment, setup]
 status: stable
 stale_after: 2026-10-31
-generated: { by: claude-code/2.1.283, at: '2026-09-26T19:10:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 ---
 
 # Primary dev Mac (repo owner)
@@ -20,6 +20,17 @@ generated: { by: claude-code/2.1.283, at: '2026-09-26T19:10:00Z' }
 | Agents installed | Claude Code 2.1.283; ChatGPT.app (agent mode not hookable); `~/.codex/` exists with a login but **Codex CLI not installed** |
 | Not installed | Codex CLI, OpenCode, Ollama, LM Studio, Rust |
 | Model cache | `~/.cache/huggingface`: Qwen3-4B-Instruct-2507-4bit (keep), plus test models (Qwen2.5-1.5B/3B, Qwen3-0.6B/1.7B, Laya) — ~7 GB total, candidates for cleanup |
+
+# Second dev Mac (full build, 2026-09-27)
+
+| Item | Value |
+|---|---|
+| Hardware | Apple M1 Pro, **16 GB RAM** |
+| Toolchain | Swift/Xcode CLT, Python 3.12 via uv, Node 24, Docker 27.4 (Docker Desktop, 8 GB VM) |
+| Agents | Claude Code 2.1.283, Codex CLI 0.157.1, OpenCode 1.18.32 |
+| Models | Qwen3-4B-Instruct-2507-4bit (MLX, host); `qwen2.5:3b` in the Ollama container |
+
+16 GB fits the MLX judge (~3.3 GB) plus the Ollama corporate model (~2.5 GB) plus agents.
 
 # Constraints that shaped decisions
 

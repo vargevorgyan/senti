@@ -204,3 +204,9 @@ def test_audit_chain(senti_home):
     lines[2] = lines[2].replace('"n": 2', '"n": 9')
     log.path.write_text("\n".join(lines) + "\n")
     assert not AuditLog().verify()[0]
+
+
+def test_patch_delete_then_add_is_overwrite():
+    from senti.patch import patch_to_actions
+    acts = patch_to_actions("*** Begin Patch\n*** Delete File: a.py\n*** Add File: a.py\n+print(1)\n*** End Patch")
+    assert acts == [("Write", {"file_path": "a.py", "content": "print(1)"})]

@@ -30,3 +30,9 @@ node_modules/
 admin/dist/
 backend/data/
 *.senti-backup-*
+
+__pycache__/
+*.pyc
+.pytest_cache/
+admin/test-results/
+admin/playwright-report/

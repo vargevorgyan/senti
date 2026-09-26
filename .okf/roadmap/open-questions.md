@@ -5,7 +5,7 @@ description: Decisions still pending from the team, from the planning session an
 tags: [roadmap, questions]
 status: draft
 stale_after: 2026-10-31
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: session
     resource: claude-code session 973dd678-f568-4b80-aeca-b6d8963be82d (2026-09-26)
@@ -16,21 +16,27 @@ sources:
     author: human:vargevorgyan
 ---
 
-# From the planning session (awaiting team answers)
+# Answered (2026-09-27)
 
-- Permission to install **Codex CLI** and **OpenCode** globally and run test sessions (Codex uses the ChatGPT plan).
-- Which wow features for the demo — suggested: **Undo + honeytokens**.
-- Org backend for the demo: **same Mac or a small cloud VM**?
-- Admin panel stack: **React served by FastAPI** or **Next.js**?
-- What plays the **corporate model** in the demo: local Qwen as a server, or a cloud model via an OpenAI-compatible API?
-- Commit/push the knowledge base and prototype to the repo (done locally, not pushed as of 2026-09-26).
-- Clean up ~7 GB of downloaded test models in `~/.cache/huggingface` (disk was 91% full).
+- Install Codex CLI / OpenCode and run test sessions — **yes**, done (see [Real-agent tests](/research/real-agent-tests.md)).
+- Wow features — undo, honeytokens, injection warnings, supply chain and task scope are all implemented ([Roadmap](/roadmap/roadmap.md)).
+- Org backend location — **Docker Compose**, same laptop for the demo; any Docker host for real use.
+- Admin panel stack — **React (Vite) behind nginx**, backend FastAPI ([ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md)).
+- Corporate model in the demo — **Ollama container** with `qwen2.5:3b` (configurable to any OpenAI-compatible endpoint in the admin panel).
+- Client UI — **none**; hooks + engine only ([ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md)).
+
+# Still open
+
+- Real logo SVGs from the designer (artifact blobs are not downloadable; admin uses a placeholder icon).
+- Push the `feat/full-build` branch and open a PR (not done by the agent).
+- Make `senti run` (sandbox) automatic for agents when a profile sets `features.sandbox`.
+- Codex hook trust for managed rollouts (`requirements.toml` managed hooks skip trust).
+- Clean up ~7 GB of test models on the original dev Mac.
 
 # From the concept draft[^concept-draft]
 
 - First customer segment (company size, industry, regulatory pressure)?
 - Deployment: single appliance, Kubernetes chart, or both?
-- Recommended local model and hardware baseline? (Current answer: Qwen3-4B, ≥16 GB RAM comfortable, 8 GB tight.)
 - Pricing: per seat, per agent, or per protected service?
 - Personal and unmanaged devices?
 - Relationship with HOL Guard: dependency, fork, or partnership?

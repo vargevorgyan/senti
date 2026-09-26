@@ -4,7 +4,7 @@ title: Agent coverage
 description: Which AI agents Senti supports and how each is intercepted (hooks, plugin, MCP proxy, sandbox), including the demo trio Claude Code, Codex and OpenCode with local models.
 tags: [integrations, agents, coverage]
 status: stable
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 stale_after: 2026-12-31
 sources:
   - id: hol-matrix
@@ -31,9 +31,9 @@ For local-model specifics see [Local models](/integrations/local-models.md).
 
 | Agent | Model | Mechanism | Status | Concept |
 |---|---|---|---|---|
-| **Claude Code** | Claude | `PreToolUse` + `UserPromptSubmit` hooks | done, tested live | [Claude Code](/integrations/claude-code.md) |
-| **Codex CLI** | ChatGPT / OpenAI | `PreToolUse` hooks in `~/.codex/config.toml` (Claude-like format) | adapter needed | [Codex CLI](/integrations/codex-cli.md) |
-| **OpenCode** | **local models** (Ollama, LM Studio, OpenAI-compatible) | TypeScript plugin with `tool.execute.before` (throw = block) | plugin needed | [OpenCode](/integrations/opencode.md) |
+| **Claude Code** | Claude | `PreToolUse` + `UserPromptSubmit` + `PostToolUse` hooks | done, tested live (2026-09-27) | [Claude Code](/integrations/claude-code.md) |
+| **Codex CLI** | ChatGPT / OpenAI | `PreToolUse`/`UserPromptSubmit`/`PostToolUse` in `.codex/hooks.json`; ask via macOS dialog | done, tested live (2026-09-27) | [Codex CLI](/integrations/codex-cli.md) |
+| **OpenCode** | **local models** (Ollama, LM Studio, OpenAI-compatible) | TypeScript plugin (`tool.execute.before/after`, `chat.message`); ask via macOS dialog | done, tested live with Ollama (2026-09-27) | [OpenCode](/integrations/opencode.md) |
 
 # Other agents with blocking hooks (per HOL Guard's matrix)[^hol-matrix]
 
@@ -48,7 +48,7 @@ HOL Guard's adapters are Apache-2.0 and can be reused with attribution.
 | **MCP proxy** | Tool calls of any MCP-speaking agent |
 | **Local model gateway** (idea) | DIY agents calling Ollama/LM Studio/MLX via an OpenAI-compatible API: Senti inspects the model's proposed tool calls and replaces blocked ones |
 | **Sandbox wrapper** (`srt`) | Anything launched through it — no per-action popups, but hard limits |
-| **Direct API** | Custom/multi-agent systems call Senti's "check this action" endpoint |
+| **Direct API** | Custom/multi-agent systems call `POST /v1/check` on the engine socket (implemented) |
 
 # Not coverable locally
 

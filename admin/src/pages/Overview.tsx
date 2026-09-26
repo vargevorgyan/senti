@@ -50,7 +50,7 @@ export default function Overview() {
         <div><b>{o.latency_ms.p95 ? `${Math.round(o.latency_ms.p95)} ms` : '–'}</b><span>slowest 5% of checks</span></div>
       </div>
 
-      <div className="grid2" style={{ gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)' }}>
+      <div className="grid2 wide-left">
         <section className="panel" aria-labelledby="t-hours">
           <div className="panel-head"><h3 id="t-hours">Actions per hour</h3><span className="small muted">green: checked, red: stopped</span></div>
           <div className="chart" role="img" aria-label="Actions and blocks per hour over the last 24 hours">

@@ -1,29 +1,43 @@
 // Senti plugin for OpenCode: every tool call is checked by the local Senti engine before it runs.
 // Installed by `senti install opencode`. Fails closed: if Senti can't be reached, the tool call is blocked.
 // Senti shows a macOS dialog itself when it needs your decision (OpenCode has no native "ask" for plugins).
-import type { Plugin } from "@opencode-ai/plugin"
+import { spawn } from "node:child_process"
+import { appendFileSync } from "node:fs"
+import { homedir } from "node:os"
 
 const HOOK = "__SENTI_HOOK__"
 
-async function senti(body: Record<string, unknown>, event: "pre" | "prompt" | "post"): Promise<any> {
-  try {
-    const proc = Bun.spawn([HOOK, "opencode", event], { stdin: "pipe", stdout: "pipe", stderr: "ignore" })
-    proc.stdin.write(JSON.stringify({ ...body, event }))
-    proc.stdin.end()
-    const out = await new Response(proc.stdout).text()
-    await proc.exited
-    return out.trim() ? JSON.parse(out) : { verdict: event === "pre" ? "block" : "allow", reason: "Senti: empty reply" }
-  } catch (e) {
-    return { verdict: event === "pre" ? "block" : "allow", reason: `Senti: I couldn't check this action (${e}), so I'm not letting it run.` }
-  }
+function note(msg: string) {
+  try { appendFileSync(`${homedir()}/.senti-opencode-plugin.log`, `${new Date().toISOString()} ${msg}\n`) } catch { /* ignore */ }
 }
 
-export const SentiPlugin: Plugin = async ({ directory, worktree }) => {
+function senti(body: Record<string, unknown>, event: "pre" | "prompt" | "post"): Promise<any> {
+  const failVerdict = event === "pre" ? "block" : "allow"
+  return new Promise(resolve => {
+    try {
+      const p = spawn(HOOK, ["opencode", event], { stdio: ["pipe", "pipe", "ignore"], env: process.env })
+      let out = ""
+      p.stdout.on("data", (d: Buffer) => { out += d.toString() })
+      p.on("error", (e: Error) => { note(`spawn error: ${e.message}`); resolve({ verdict: failVerdict, reason: `Senti: I couldn't check this action (${e.message}), so I'm not letting it run.` }) })
+      p.on("close", () => {
+        try { resolve(out.trim() ? JSON.parse(out) : { verdict: failVerdict, reason: "Senti: empty reply" }) }
+        catch (e) { note(`bad reply: ${out.slice(0, 200)}`); resolve({ verdict: failVerdict, reason: "Senti: unreadable reply" }) }
+      })
+      p.stdin.end(JSON.stringify({ ...body, event }))
+    } catch (e) {
+      note(`error: ${e}`)
+      resolve({ verdict: failVerdict, reason: `Senti: I couldn't check this action (${e}), so I'm not letting it run.` })
+    }
+  })
+}
+
+export const SentiPlugin = async ({ directory, worktree }: any) => {
   const cwd = worktree || directory
+  note(`loaded for ${cwd}`)
   return {
     "chat.message": async (input: any, output: any) => {
       const text = (output?.parts ?? []).filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n")
-      if (text) await senti({ sessionID: input.sessionID, prompt: text, cwd }, "prompt")
+      if (text) await senti({ sessionID: input?.sessionID, prompt: text, cwd }, "prompt")
     },
     "tool.execute.before": async (input: any, output: any) => {
       const r = await senti({ tool: input.tool, args: output.args, sessionID: input.sessionID, cwd }, "pre")

@@ -5,7 +5,7 @@ description: Near-term engineering work, differentiating feature ideas ranked by
 tags: [roadmap, features, ideas]
 status: draft
 stale_after: 2026-12-31
-generated: { by: claude-code/2.1.283, at: '2026-09-26T19:00:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: session
     resource: claude-code session 973dd678-f568-4b80-aeca-b6d8963be82d (2026-09-26)
@@ -15,6 +15,21 @@ sources:
     title: Concept draft — MVP scope and later items
     author: human:vargevorgyan
 ---
+
+# Implementation status (2026-09-27, full build)
+
+| Feature | Status |
+|---|---|
+| Undo / time machine | **done** — APFS-clone snapshots, `senti undo list/restore` |
+| Honeytokens | **done** — `senti honeytoken plant DIR`, alarm on read or send |
+| Task scope contract | **done (opt-in)** — profile feature `scope_contract`, local judge derives domains |
+| Post-read injection scanning | **done** — PostToolUse / tool.execute.after warnings; tainted sessions need a yes for network |
+| Cross-agent timeline | **done** — admin Activity/Overview across agents and Macs |
+| Package supply-chain check | **done** — offline known-malicious + typosquat lists |
+| Secret brokering | not started |
+| Local model gateway for DIY agents | not started (generic `/v1/check` API exists) |
+| Per-agent identity tokens / peer verification | not started |
+| Engine port to Swift | dropped for now (ADR-010 keeps Python) |
 
 # Differentiating features (ranked)
 

@@ -27,50 +27,71 @@ read `AGENTS.md`, then this file, then `.okf/getting-started.md`. Update this fi
 
 ## Status
 
-Legend: [x] done · [~] in progress · [ ] todo
+Legend: [x] done · [~] partial · [ ] todo
 
-### Engine (local, host)
-- [ ] Package skeleton, config (`~/.senti`), models
-- [ ] Rules L1 + detectors L2 ported from prototype
-- [ ] Script inspection: inline `-c/-e`, `package.json` scripts, Makefile targets, local imports, personal-folder deletion in scripts
-- [ ] Profiles: schema, evaluation (files/network/shell/packages), per-agent overrides, delegation intersection
-- [ ] Signed profile cache (Ed25519), SSE push sync, `strict_local` when backend unreachable
-- [ ] Judge interface: LocalJudge (MLX), RemoteJudge (corporate via backend), NoJudge; router modes `local | corporate | local_then_corporate | none`
-- [ ] Decision cache, task tracking (UserPromptSubmit), write-time script pre-check, async reasons
-- [ ] Audit log (hash-chained JSONL, append-only) + batched upload
-- [ ] Adapters: Claude Code, Codex CLI (incl. `apply_patch`), OpenCode, generic `/v1/check`
-- [ ] FastAPI server over Unix socket (0600)
-- [ ] Swift hook client (HTTP/UDS, fail closed)
-- [ ] CLI: start/stop/status/install/uninstall/enroll/log/undo/run
-- [ ] Installers: Claude Code settings, Codex config.toml, OpenCode plugin
-- [ ] Sandbox: per-agent srt settings generated from profile; `senti run <cmd>`
-- [ ] Undo / time machine (APFS clone snapshots before destructive actions)
-- [ ] Honeytokens
-- [ ] Supply-chain check (offline malicious/typosquat list)
-- [ ] Post-read prompt-injection scanning
-- [ ] Task scope contract
-- [ ] Self-protection (Senti/agent hook configs)
+### Engine (local, host) — `engine/`
+- [x] Package skeleton, config (`~/.senti`), models, CLI (`senti …`)
+- [x] Rules L1 + detectors L2 ported and extended (sudo, substitutions, hex/base64, history wipe, stop-Senti, Keychain, …)
+- [x] Script inspection: inline `-c/-e`, `package.json` scripts (+install hooks), Makefile targets, local imports (py/js/sh), personal-folder deletion, reviewer-injection text, obfuscation
+- [x] Profiles: schema, evaluation (files/network/shell/mcp/packages), per-agent overrides (narrowing only), per-user assignments
+- [x] Signed profile cache (Ed25519), SSE push (~0.2 s), `strict_local` when backend unreachable, revocation handling
+- [x] Judges: LocalJudge (MLX, lazy load, idle unload), RemoteJudge (corporate via backend), router `local | corporate | local_then_corporate | none`
+- [x] Decision cache (keyed by profile version), task tracking, write-time script pre-check, reasons for ask/block
+- [x] Audit log (hash-chained JSONL) + batched idempotent upload + heartbeat
+- [x] Adapters: Claude Code, Codex CLI (incl. `apply_patch`, delete+add = overwrite), OpenCode, generic `/v1/check`
+- [x] FastAPI server over Unix socket (0600), refuses to steal a live socket
+- [x] Swift hook client (HTTP/UDS, fail closed per agent; Codex explicit deny) + Python fallback client
+- [x] Installers (Claude Code settings, Codex hooks.json, OpenCode plugin) with backups; LaunchAgent (`senti service install`)
+- [~] Sandbox: per-agent srt settings from the profile, `senti sandbox`, `senti run` — **not automatic** yet when `features.sandbox` is on
+- [x] Undo / time machine (APFS clones), Honeytokens, Supply-chain check, Post-read injection scanning (+ tainted sessions), Task scope contract (opt-in)
+- [x] Self-protection (Senti home, agent hook configs, launchctl/pkill Senti)
+- [x] "Ask" handling: Claude native prompt; macOS dialog for Codex/OpenCode (Always allow → allowlist); owner/admin approvals via backend
 
-### Org backend (Docker)
-- [ ] FastAPI + SQLite models: org, users, roles, agents, devices, profiles, events, approvals, admins
-- [ ] Admin auth (JWT), seed admin + default profiles (Developer, PM, Autonomous agent)
-- [ ] `POST /devices/enroll`, `GET /profiles` (signed) + SSE push
-- [ ] `POST /judge` gateway → corporate model (Ollama OpenAI-compatible)
-- [ ] `POST /events` (batched audit), stats
-- [ ] `GET/POST /approvals` (ask routed to owner/admin)
-- [ ] Tests
+### Org backend (Docker) — `backend/`
+- [x] FastAPI + SQLite models: admins, roles, users, profiles, devices, enrollment codes, events, approvals, KV, change log
+- [x] Admin auth (JWT, random secret per install), seed admin + Developer / PM / Autonomous agent profiles + demo code
+- [x] Device API: enroll, signed profiles, SSE stream, heartbeat, events, judge gateway, approvals
+- [x] Corporate judge gateway (OpenAI-compatible, JSON mode, logprobs → p(verdict), safety bias)
+- [x] Admin API: overview, profiles CRUD/duplicate, roles, users (+effective profiles), devices/revoke, codes, events (+CSV), approvals, corporate model settings/status/playground, change log, SSE
+- [x] Tests (13)
 
-### Admin panel (React, Docker)
-- [ ] Design tokens from design system, fonts, light/dark
-- [ ] Login, overview dashboard (live feed), profiles editor (judge mode, rules, instructions), devices, users, agents, audit log, approvals
-- [ ] Playwright e2e
+### Admin panel (React, Docker) — `admin/`
+- [x] Design tokens/type/components from the designer's system (`docs/design/`), light/dark, responsive
+- [x] Login, Overview, Activity (live), Approvals, Profiles + editor (judge modes, rules, overrides, protections), People and roles, Devices + enrollment, Corporate judge + playground, Change log
+- [x] Playwright e2e (7 tests incl. mobile overflow)
+- [ ] Real logo SVGs (designer's artifact blobs are not downloadable; placeholder icon used)
 
 ### Infra / QA / docs
-- [ ] docker-compose (backend, admin, ollama + model pull)
-- [ ] End-to-end simulation re-run against new engine
-- [ ] Real-agent tests: Claude Code, Codex CLI, OpenCode
-- [ ] Demo: poisoned repo + script
-- [ ] README quickstart, `.okf` updates (ADR-010, concepts, log)
+- [x] docker-compose (backend, admin, ollama + model pull, healthchecks), `.env.example`
+- [x] `scripts/e2e_modes.py` — 14/14 live checks (all judge modes, push, overrides, approvals, audit upload)
+- [x] `scripts/simulate.py` — 73 labelled actions: 22/22 dangerous stopped, 96% exact
+- [x] Real agents: Claude Code, Codex CLI, OpenCode (cloud model and local Ollama) — see `.okf/research/real-agent-tests.md`
+- [x] Demo: `demo/make-demo-repo.sh` (poisoned repo, fake secrets)
+- [x] README quickstart, `.okf` updates (ADR-010, code guide, admin panel, real-agent tests, rewritten concepts, log)
+
+## Remaining / next steps (pick up here)
+
+1. **Automatic sandboxing**: when a profile has `features.sandbox`, make installers launch agents through `senti run` (shell alias or wrapper) and enable Claude Code's built-in sandbox settings.
+2. **Secret brokering** and a **local model gateway** for DIY agents (roadmap items not started).
+3. **Per-agent identity tokens + peer verification** on the socket (`LOCAL_PEERPID`).
+4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): pass static facts (no network, project-only writes) or few-shot examples in the cached prompt.
+5. **Codex hook trust** for managed rollouts (`requirements.toml` managed hooks).
+6. **Push `feat/full-build` and open a PR** (the agent did not push).
+7. Postgres option for the backend and multi-admin roles (only one admin role today).
+8. Designer's real logo SVGs into `admin/public/`.
+
+## How to verify quickly
+
+```bash
+docker compose up -d --build
+cd engine && uv sync --extra mlx && uv run pytest -q && cd ../backend && uv run pytest -q
+cd ../engine && SENTI_HOME=/tmp/senti-test SENTI_SOCKET=/tmp/senti-test.sock uv run senti start
+SENTI_HOME=/tmp/senti-test SENTI_SOCKET=/tmp/senti-test.sock uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email dev@acme.test
+# restart the engine, then:
+cd .. && SENTI_SOCKET=/tmp/senti-test.sock uv run --project engine python scripts/e2e_modes.py
+cd admin && npx playwright test
+```
 
 ## Log
 - 2026-09-27: Board created. Branch `feat/full-build`. Design system copied to `docs/design/`.
+- 2026-09-27: Engine, backend, admin panel, Docker stack built; all judge modes verified end to end (14/14); real Claude Code, Codex, OpenCode sessions pass through Senti; simulation 22/22 dangerous stopped; docs and `.okf` updated.

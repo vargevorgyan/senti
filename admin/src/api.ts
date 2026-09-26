@@ -77,7 +77,7 @@ export const AGENTS = [
   { id: 'codex', name: 'Codex' },
   { id: 'opencode', name: 'OpenCode' },
 ]
-export const agentName = (id: string) => AGENTS.find(a => a.id === id)?.name ?? (id || 'Agent')
+export const agentName = (id: string) => AGENTS.find(a => a.id === id)?.name ?? (id === 'generic' ? 'Other agents' : id || 'Agent')
 
 export function ago(ts: number): string {
   if (!ts) return 'never'

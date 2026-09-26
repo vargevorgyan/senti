@@ -5,7 +5,7 @@ description: The layered decision pipeline — context, cache, rules, detectors,
 tags: [architecture, engine, rules, detectors]
 status: stable
 resource: /prototype/engine/server.py
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: rules
     resource: /prototype/engine/rules.py
@@ -17,51 +17,60 @@ sources:
     resource: AI_Agent_Guardrails_Concept_Draft.docx (concept draft v0.1)
     title: Concept draft — decision cascade section
     author: human:vargevorgyan
+  - id: build
+    resource: /engine/src/senti (engine.py, rules.py, profiles.py, judge/)
+    title: Full-build engine source
+    author: claude-code/2.1.283
 ---
 
 # Overview
 
 Cheap deterministic checks run first; the LLM sees only what rules cannot settle.[^concept-draft]
-In testing ≈75% of actions were settled by rules/detectors in ~3 ms; ≈25% went to the LLM.
+In prototype tests ≈75% of actions were settled by rules/detectors in ~3 ms; ≈25% went to the LLM. Implementation: `engine/src/senti/engine.py`.
 
-# Layers
+# Layers (full build)
 
 | # | Layer | What it does | Latency |
 |---|---|---|---|
-| 0 | **Context** | Session → user's TASK (from `UserPromptSubmit`); agent identity → profile | — |
-| 0 | **Decision cache** | Key = sha256(task, tool, input, script text). Same question → same answer | ~3 ms end-to-end |
-| 1 | **Rules** | Hard deny (can never be overridden) and clearly-safe allow; also collect *facts* (uses network? touches secrets? runs a script?) | µs |
-| 2 | **Detectors** | Secret scanner (AWS/GitHub/OpenAI/Anthropic/Stripe/Slack keys, private keys, high-entropy assignments); base64 unwrapping → re-check; script static scan (reads secrets **and** network → block); taint (sensitive file + network tool in one command → block) | ms |
-| 3 | **LLM judge** | Task-aware verdict for the grey zone; see [LLM judge](/architecture/llm-judge.md) | 0.5–1.5 s local |
-| — | **Decision** | allow / ask (popup) / block (deny + reason to the agent); log + cache | — |
+| 0 | **Context** | Session → user's TASK (`UserPromptSubmit` / OpenCode `chat.message`); agent → profile (role profile + per-agent override, strictest wins) | — |
+| 0 | **Honeytokens** | Any touch of a planted decoy file or fake key value → block (critical) | µs |
+| 1 | **Built-in rules** | Hard deny (never overridable), clearly safe allow, and facts (network? secrets? scripts? packages? deletes?) | µs |
+| 1 | **Profile rules** | Org file/network/shell/MCP deny/ask/allow lists and "otherwise" policy from the signed profile | µs |
+| 2 | **Detectors** | Script content + followed local imports; inline `-c/-e` code; npm/Makefile targets resolved; secret scanner; base64/hex unwrapping; supply chain (known-bad / typosquat); taint; session tainted by prompt injection → network needs a yes | ms |
+| 0 | **Allowlist / cache / prefetch / scope** | "Always allow" choices; identical decision cache (keyed by task, input, script, profile version); write-time script verdicts; task scope contract (optional) | ~ms |
+| 3 | **LLM judge router** | Profile mode: `local` (MLX Qwen3-4B), `corporate` (backend gateway), `local_then_corporate` (escalate when local is unsure: ask or confidence < 0.8), `none` (ask) | 0.5–1.5 s local, 1–5 s CPU corporate |
+| — | **Decision** | allow / ask / block → agent reply; ask resolved by the agent prompt, a macOS dialog (Codex, OpenCode), or owner approval in the admin panel; undo snapshot for allowed destructive actions; audit | — |
+
+Strictness merge: a profile or detector can make a decision stricter than a built-in allow, never looser than a built-in block.
+Backend unreachable + `on_backend_unreachable: strict_local` → corporate mode uses the local judge instead; judge errors → ask.
 
 # Hard-deny rules (examples)
 
-`curl|wget … | sh`; `/dev/tcp/` reverse shells, `nc -e`; `base64 -d | sh`; `dd of=/dev/disk*`; `mkfs`/`diskutil erase`;
-`chmod -R 777 /`; `security dump-keychain`/`find-generic-password -w`; `crontab` + network; `csrutil disable`;
-`rm` of `~` or personal folders (Documents, Desktop, Pictures, Library, ...) outside the project; reading
-`~/.ssh`, `~/.aws`, `~/.gnupg`, Keychains, browser profiles; editing Senti/agent hook configs (self-protection).[^rules]
+`curl|wget … | sh` or `| python`; `/dev/tcp/`, `nc -e`, `bash -i >&`; `base64 -d | sh`; `dd of=/dev/disk*`; `mkfs`/`diskutil erase`;
+`chmod -R 777 /`; Keychain password reads; `crontab` + network; `csrutil disable`; `rm -rf ~|/|~/Documents…`; stopping Senti
+(`launchctl unload …senti`, `pkill senti`); history wiping; reading `~/.ssh`, `~/.aws`, `~/.gnupg`, Keychains, browser profiles,
+`~/.codex/auth.json`; editing Senti or agent hook configs (self-protection: `~/.claude/settings*.json`, `~/.codex/config.toml|hooks.json`, OpenCode plugins, `~/.senti`).
 
 # Clearly-safe rules (examples)
 
-Read/Grep/Glob inside the project (except config/secret-looking files, which go to the judge with the task);
-Write/Edit inside the project with no detected secrets; `ls`, `grep`, `git status/diff/log/commit`, `npm test`,
-`npm run …`, `rm -rf ./build|dist|node_modules|…` inside the project; `curl` to localhost; docs domains.[^rules]
+Read/Grep/Glob inside the project (config-like files go to the judge); Write/Edit inside the project with no secrets or malicious
+content (package.json, Makefile, CI files go to the judge — they run later); `ls`, `grep`, `git status/diff/log/commit`, `npm test`
+(after resolving what it runs), popular package installs, `rm -rf node_modules|dist|build`, `curl localhost`, docs domains.
 
 # Ask rules (examples)
 
-Reading `.env`/secrets files; writing LaunchAgents or shell profiles (persistence); fetching from raw IP URLs.
+Reading `.env`/secrets files; persistence (LaunchAgents, shell profiles, git hooks); raw-IP URLs; force-push; typosquatted packages; obfuscated code (`exec(base64…)`).
 
-# Background work (never blocks the agent)
+# Background work
 
-- **Write-time script pre-check**: when an agent writes/edits a code file, the judge evaluates it immediately; the verdict is cached by content hash so the later run is usually instant. This blocked the injected `helper.py` in tests.[^server]
-- **Async reasons**: popup opens on the verdict; the plain-English reason streams in ~1 s later.
-- **Model unload** after idle (planned).
+- **Write-time script pre-check**: code files are judged the moment they are written; running them later is instant (seen live with Codex).
+- **Undo snapshots**: APFS clones before `rm`/`mv`/overwrites/`git reset --hard`; `senti undo list|restore`.
+- **Model unload** after idle (default 15 min), lazy reload.
 
 # Known gaps
 
-See [Script inspection](/architecture/script-inspection.md) (npm scripts, Makefiles, imports not yet resolved)
-and the misses listed in [End-to-end simulation](/research/end-to-end-simulation.md).
+Binaries and runtime-downloaded code (sandbox backstop), deeper import graphs, Python GIL contention while the LLM runs.
+See [Script inspection](/architecture/script-inspection.md) and [Real-agent tests](/research/real-agent-tests.md).
 
 [^rules]: Rules (L1) and detectors (L2) implementation
 [^server]: Engine server with cascade, cache, prefetch, async reasons

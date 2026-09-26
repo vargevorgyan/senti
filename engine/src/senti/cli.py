@@ -143,6 +143,9 @@ def _fmt(r: dict) -> str:
     v = r.get("verdict") or r.get("event", "")
     inp = r.get("input") or {}
     what = inp.get("command") or inp.get("file_path") or inp.get("url") or inp.get("filePath") or ""
+    if str(what).startswith("*** Begin Patch"):
+        import re as _re
+        what = "patch: " + ", ".join(m.group(2) for m in _re.finditer(r"\*\*\* (Add|Update|Delete) File: (\S+)", what))
     return f"{t} {v:6s} {r.get('agent', ''):8s} {r.get('tool', ''):10s} {str(what)[:70]:70s} {r.get('layer', '')} · {r.get('reason', '')}"
 
 

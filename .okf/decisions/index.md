@@ -1,6 +1,6 @@
 # Decisions (ADRs)
 
-* [ADR-001: Native Swift macOS app for the MVP](adr-001-native-swift-macos-app.md) - The MVP is a native SwiftUI menu-bar app with an in-process or sidecar engine, chosen by the team over Tauri, Electron and SwiftUI+Python.
+* [ADR-001: Native Swift macOS app for the MVP](adr-001-native-swift-macos-app.md) - *(superseded by ADR-010)* The MVP is a native SwiftUI menu-bar app with an in-process or sidecar engine, chosen by the team over Tauri, Electron and SwiftUI+Python.
 * [ADR-002: Hybrid cascade, not LLM-only or rules-only](adr-002-hybrid-cascade.md) - Decisions use rules and detectors first and a local LLM only for the grey zone, because LLM-only is too slow and rules-only prompts too often and misses obfuscated scripts.
 * [ADR-003: Qwen3-4B-Instruct (4-bit, MLX) as the local judge](adr-003-qwen3-4b-judge.md) - The local judge is Qwen3-4B-Instruct-2507 4-bit on MLX, the smallest tested model that let no dangerous action through.
 * [ADR-004: Do not fork HOL Guard; borrow rules and adapters](adr-004-do-not-fork-hol-guard.md) - Senti is built fresh in Swift and borrows HOL Guard's Apache-2.0 rule catalogs, fixtures and agent adapters with attribution instead of forking.
@@ -9,3 +9,4 @@
 * [ADR-007: OS sandbox as the enforcement backstop](adr-007-sandbox-backstop.md) - Every agent's commands run under an OS-level sandbox (sandbox-runtime / Seatbelt) with per-agent file and network limits, because hooks cannot see inside running code.
 * [ADR-008: Demo agents are Claude Code, Codex CLI and OpenCode](adr-008-demo-agents.md) - The demo must show Claude (Claude Code), ChatGPT (Codex CLI) and local models (OpenCode) protected by the same engine.
 * [ADR-009: Name, repository and visibility](adr-009-name-and-repo.md) - The project is named Senti; the GitHub repo vargevorgyan/senti is private with collaborator progerg.
+* [ADR-010: No client UI app; FastAPI engine and backend, React admin panel](adr-010-no-client-ui-fastapi-react.md) - The Mac side is only hooks/plugins plus a host-native FastAPI engine on a Unix socket; the organization side is a FastAPI backend and a React admin panel in Docker. Supersedes ADR-001.

@@ -209,6 +209,11 @@ SAFE_SUBCOMMANDS = {
     "python3": {"-m", "--version", "-V"}, "python": {"-m", "--version", "-V"}, "pip": {"install", "list", "show", "freeze"},
     "pip3": {"install", "list", "show", "freeze"}, "docker": {"ps", "images", "build", "compose", "logs", "version"},
     "swift": {"build", "test", "run"}, "swiftc": None, "xcodebuild": None,
+    # build tools and test runners commonly behind `npm run …`
+    "vite": None, "next": {"build", "dev", "start", "lint"}, "webpack": None, "rollup": None, "esbuild": None, "parcel": None,
+    "turbo": {"run", "build", "test", "lint"}, "nx": {"run", "build", "test", "lint"}, "react-scripts": {"build", "test", "start"},
+    "nuxt": {"build", "dev", "generate"}, "astro": {"build", "dev", "check"}, "svelte-kit": None, "ng": {"build", "test", "serve", "lint"},
+    "mocha": None, "ava": None, "tap": None, "stylelint": None, "biome": None, "oxlint": None,
 }
 SAFE_PY_MODULES = {"pytest", "unittest", "mypy", "black", "ruff", "pip", "venv", "http.server", "json.tool", "compileall"}
 SCRIPT_RUNNERS = {"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl", "deno", "bun", "ts-node", "tsx", "osascript",

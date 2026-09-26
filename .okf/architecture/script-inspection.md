@@ -4,7 +4,7 @@ title: Script inspection before execution
 description: What Senti can read before an agent runs code (scripts, written files, inline code) and the known gaps (npm scripts, imports, downloaded code, binaries).
 tags: [architecture, scripts, detection]
 status: stable
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: session
     resource: claude-code session 973dd678-f568-4b80-aeca-b6d8963be82d (2026-09-26)
@@ -21,18 +21,18 @@ payload, before they exist on disk. This is independent of the agent vendor.
 
 # Coverage
 
-| Case | Readable? | Prototype | Needed |
+| Case | Readable? | Full build | Remaining |
 |---|---|---|---|
 | `python x.py`, `node x.js`, `bash x.sh`, `./x.sh` | yes | done | — |
-| Script written by the agent in this session | yes, at write time | done | — |
-| `python -c "…"`, `node -e "…"` | yes (in the command) | partial | send inline code to the judge as a script |
-| `npm test`, `npm run build` | indirect (`package.json` → `scripts`) | no | resolve package.json scripts |
-| `make`, `pytest`, `python -m pkg` | indirect | no | per-tool resolvers |
-| Script importing a local module with the bad code | if imports are followed | no | follow local imports 1–2 levels |
-| Code downloaded at runtime (`exec(requests.get(u).text)`, `curl … \| python`) | no | pattern rules | block pattern + sandbox |
-| Compiled binaries | not meaningfully | — | unknown binary → ask + sandbox |
-| Runtime string building / `eval` | partially (LLM caught `'ss'+'h'`) | via LLM | sandbox backstop |
-| File changed between check and run | rare | hash recorded | re-check hash + sandbox |
+| Script written by the agent in this session | yes, at write time | done (write-time scan + LLM prefetch; malicious content blocked at write) | — |
+| `python -c "…"`, `node -e "…"` | yes (in the command) | done (sent to detectors and judge as a script) | — |
+| `npm test`, `npm run build`, `npm install` hooks | indirect | done (`package.json` scripts incl. pre/post and install hooks resolved and checked) | — |
+| `make target` | indirect | done (Makefile recipe lines) | `pytest` plugins, `python -m pkg` |
+| Script importing a local module with the bad code | if imports are followed | done (Python/JS/shell local imports, 2 levels, up to 8 files) | deeper graphs |
+| Code downloaded at runtime | no | hard-deny patterns + obfuscation ask | sandbox backstop |
+| Compiled binaries | not meaningfully | unknown program → judge | sandbox |
+| Runtime string building / `eval` | partially | LLM + reviewer-injection detector | sandbox |
+| File changed between check and run | rare | decision cache keyed by content | sandbox |
 
 # Also watch
 

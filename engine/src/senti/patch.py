@@ -34,7 +34,11 @@ def parse_patch(text: str) -> list[dict]:
 
 def patch_to_actions(text: str) -> list[tuple[str, dict]]:
     acts: list[tuple[str, dict]] = []
-    for f in parse_patch(text):
+    files = parse_patch(text)
+    re_added = {f["path"] for f in files if f["op"] == "add"}
+    for f in files:
+        if f["op"] == "delete" and f["path"] in re_added:
+            continue  # delete + add of the same file = an overwrite, checked as the Write below
         if f["op"] == "add":
             acts.append(("Write", {"file_path": f["path"], "content": f["content"]}))
         elif f["op"] == "update":

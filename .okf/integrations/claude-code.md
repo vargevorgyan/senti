@@ -5,7 +5,7 @@ description: How Senti hooks into Claude Code (PreToolUse and UserPromptSubmit) 
 tags: [integrations, claude-code, anthropic]
 status: stable
 resource: /prototype/engine/hooks-settings.example.json
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
 sources:
   - id: realrun
     resource: claude-code 2.1.283 headless run (`claude -p`) with --settings hooks, 2026-09-26
@@ -21,6 +21,13 @@ sources:
 - Example config: `prototype/engine/hooks-settings.example.json` (pass with `claude --settings <file>` or merge into `.claude/settings.local.json`).
 - Self-protection: rules block agents from editing `~/.claude/settings*.json` hooks.
 - Claude Code's own sandbox (built on the same `srt`) can serve as the enforcement layer.
+
+# Full build
+
+`senti install claude` merges into `~/.claude/settings.json` (or `--project DIR` → `.claude/settings.local.json`, with a backup):
+`PreToolUse` matcher `*` → `senti-hook claude pre` (timeout 600), `UserPromptSubmit` → `… prompt`, `PostToolUse` for
+`Read|WebFetch|Bash|Grep|mcp__.*` → `… post` (prompt-injection warning via `additionalContext`). Live test with Haiku 4.5:
+README injection warned, `helper.py` blocked, tests allowed — see [Real-agent tests](/research/real-agent-tests.md).
 
 # Real-session results (2026-09-26)[^realrun]
 

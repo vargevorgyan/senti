@@ -6,3 +6,4 @@
 * [Laya evaluation (rejected as judge)](laya-evaluation.md) - Why the Laya zero-shot decision model was rejected for command and access limiting after testing on an M1.
 * [sandbox-runtime test](sandbox-runtime-test.md) - Test of Anthropic's sandbox-runtime (srt) against an exfiltration script using fake secrets.
 * [Related repositories and links](related-repos.md) - Links to every external project referenced during Senti's planning, grouped by how they relate to Senti.
+* [Real-agent tests of the full build](real-agent-tests.md) - Live sessions of Claude Code, Codex CLI and OpenCode against the poisoned demo repo through the full-build engine, plus the automated judge-mode end-to-end run.

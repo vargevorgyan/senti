@@ -245,7 +245,7 @@ class Engine:
                     r: JudgeResult = await asyncio.wait_for(asyncio.shield(self.prefetch[pk]), self.settings.judge_timeout_s)
                     if not r.error:
                         return Decision(r.verdict, r.reason or "I checked this script when the agent wrote it", "L0-prefetch",
-                                        r.source, r.p, "critical" if r.verdict == "block" else "info")
+                                        "ai_judge_prefetch", r.p, "critical" if r.verdict == "block" else "info")
                 except Exception:
                     pass
 
@@ -267,9 +267,9 @@ class Engine:
         else:
             reason = r.reason or ("Looks like normal development work" if r.verdict == "allow" else
                                   "This looks unusual for the task you gave the agent")
-            d = Decision(r.verdict, reason, "L3-llm-" + r.source, r.model, r.p,
+            d = Decision(r.verdict, reason, "L3-llm-" + r.source, "ai_judge" if r.source != "none" else "no_judge", r.p,
                          "critical" if r.verdict == "block" else "warning" if r.verdict == "ask" else "info",
-                         meta={"judge_ms": r.ms})
+                         meta={"judge_ms": r.ms, "model": r.model})
             self.cache[key] = d
         return d
 

@@ -3,7 +3,7 @@ type: Component
 title: Senti macOS app
 description: Planned native SwiftUI menu-bar app — approval popup, activity log, per-agent settings — that fronts the local engine.
 tags: [architecture, macos, swiftui, ui]
-status: draft
+status: superseded
 generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
 sources:
   - id: session
@@ -11,6 +11,8 @@ sources:
     title: Stack decision and UI discussion
     author: human:vargevorgyan
 ---
+
+> **Superseded (2026-09-27):** no client UI app will be built — see [ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md). Its responsibilities moved to the agents' native prompts, macOS notifications/dialogs from the engine, the `senti` CLI, and the org [admin panel](/architecture/admin-panel.md).
 
 # Overview
 
