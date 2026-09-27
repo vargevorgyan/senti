@@ -680,6 +680,8 @@ def _tls_fingerprint() -> str:
     import ssl
 
     from cryptography import x509
+    if settings.public_tls:
+        return ""  # Macs reach public_url through a publicly trusted certificate: nothing to pin
     if settings.tls_ca and os.path.exists(settings.tls_ca):
         return hashlib.sha256(ssl.PEM_cert_to_DER_cert(open(settings.tls_ca).read())).hexdigest()
     path = settings.tls_cert

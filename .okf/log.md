@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Update**: `SENTI_PUBLIC_TLS` + `./senti-server --public-url`: behind a reverse proxy with a public certificate, invites carry no fingerprint and Macs use `https://host/api/…` on 443; Senti's port stays local. `senti.gagik.one` now works this way (8443 closed) — [Server installer](/guides/server-installer.md).
 * **Update**: `./senti-server` ports and reverse proxy — `--http-port`, `--admin-base /admin/`, `--trusted-proxy`; backend port check dropped (not published); admin redirect port and real-IP trust written at container start; admin fonts no longer inlined as `data:` (CSP `font-src 'self'`). Deployed to `senti.gagik.one` (landing at `/`, admin at `/admin/`) — [Server installer](/guides/server-installer.md).
 * **Creation**: Public landing page in `landing/` (night-watch palette, live checkpoint hero with real incident commands, incident stack, six-check walkthrough, features, plain-English policy, animated MCP server gateway with live call log) — [Code guide](/code-guide.md).
 * **Update**: Documentation catch-up — new guides ([server installer](/guides/server-installer.md), [connecting assistants](/guides/connecting-assistants.md), [writing a server policy](/guides/writing-server-policy.md)), [Access and credentials](/architecture/access-and-credentials.md), [server-gateway use case](/use-cases/agents-on-the-company-server.md); getting started, system overview, admin panel, glossary, demo plan, AGENTS.md and README now describe the company AI filter, the MCP gateway, invites and the installer.

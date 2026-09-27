@@ -104,6 +104,9 @@ Usage: ./senti-server install [options]      (without options it asks, with sens
   --https-port N           HTTPS port for the admin panel, Macs and the MCP gateway (default 8443)
   --http-port N            plain-HTTP port that only redirects to HTTPS (default 8081)
   --admin-base PATH        serve the admin panel under a sub-path, e.g. /admin/ (default /)
+  --public-url URL         Macs reach Senti at this address through a reverse proxy with a publicly trusted certificate
+                           (e.g. https://senti.acme.com, forwarding /api/, /join, /install.sh and /downloads/ to Senti);
+                           Senti's own port then stays on this machine (defaults to --network local)
   --trusted-proxy CIDRS    a reverse proxy on this server in front of Senti (e.g. 172.16.0.0/12 for the host's nginx):
                            Senti then takes the client address from its X-Forwarded-For header
   --demo-data              add a fake "company server" (files + database) to try the server gateway
@@ -112,7 +115,7 @@ EOF
 
 cmd_install() {
   local ORG="" ADMIN_EMAIL="" ADMIN_PASSWORD="" NETWORK="" HOSTS="" AI="" AI_URL="" AI_MODEL="" AI_KEY="" HTTPS_PORT="" DEMO=""
-  local PUBLIC_HOST="" ADMIN_ALLOW="" HTTP_PORT="" ADMIN_BASE="" TRUSTED_PROXY=""
+  local PUBLIC_HOST="" ADMIN_ALLOW="" HTTP_PORT="" ADMIN_BASE="" TRUSTED_PROXY="" PUBLIC_URL=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes|-y) YES=1 ;;
@@ -131,6 +134,7 @@ cmd_install() {
       --http-port) HTTP_PORT=$2; shift ;;
       --admin-base) ADMIN_BASE=$2; shift ;;
       --trusted-proxy) TRUSTED_PROXY=$2; shift ;;
+      --public-url) PUBLIC_URL=$2; shift ;;
       --demo-data) DEMO=yes ;;
       -h|--help) usage_install; exit 0 ;;
       *) die "Unknown option $1 (see ./senti-server install --help)" ;;
@@ -164,6 +168,9 @@ cmd_install() {
   [ ${#ADMIN_PASSWORD} -ge 10 ] || die "Please use at least 10 characters for the admin password"
 
   step "Who should reach Senti?"
+  # behind a reverse proxy the proxy is what the world reaches; a re-install keeps it
+  [ -n "$PUBLIC_URL" ] || [ "$(env_get SENTI_PUBLIC_TLS)" != true ] || PUBLIC_URL=$(env_get SENTI_PUBLIC_URL)
+  [ -z "$PUBLIC_URL" ] || NETWORK=${NETWORK:-local}
   if [ -z "$NETWORK" ] && [ "$YES" = 0 ] && [ -t 0 ]; then
     say "  1) Other computers in the company network (recommended: employees' Macs and agents connect)"
     say "  2) Only this computer (for trying it out)"
@@ -183,6 +190,16 @@ cmd_install() {
   else
     PUBLIC_HOST=localhost
     ok "Only this computer: https://localhost:${HTTPS_PORT:-8443}"
+  fi
+  local public_tls=false
+  if [ -n "$PUBLIC_URL" ]; then
+    PUBLIC_URL=${PUBLIC_URL%/}
+    printf '%s' "$PUBLIC_URL" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$' \
+      || die "--public-url must be https://host or https://host:port (no path), like https://senti.acme.com"
+    PUBLIC_HOST=$(printf '%s' "$PUBLIC_URL" | sed 's#^https://##; s#:.*$##')
+    tls_hosts="$tls_hosts,$PUBLIC_HOST"
+    public_tls=true
+    ok "Macs connect to $PUBLIC_URL (the proxy's public certificate; it forwards /api/, /join, /install.sh, /downloads/)"
   fi
 
   step "Who may open the admin panel?"
@@ -285,7 +302,9 @@ SENTI_CORP_MODEL_ENABLED=$([ "$AI" = none ] && echo false || echo true)
 SENTI_GATEWAY_DIR=./server-data
 SENTI_AI_MODE=$AI
 # Address in invite links (Macs connect here from anywhere), and who may open the admin panel
-SENTI_PUBLIC_URL=https://$PUBLIC_HOST:$HTTPS_PORT
+SENTI_PUBLIC_URL=${PUBLIC_URL:-https://$PUBLIC_HOST:$HTTPS_PORT}
+# true: SENTI_PUBLIC_URL has a publicly trusted certificate (reverse proxy), so invites carry no fingerprint
+SENTI_PUBLIC_TLS=$public_tls
 SENTI_ADMIN_ALLOW=$admin_allow
 # Invite links open this page (empty: this server's own /join page; or your website's join page)
 SENTI_JOIN_PAGE=$(env_get SENTI_JOIN_PAGE)
@@ -315,16 +334,19 @@ EOF
 
   local fp; fp=$(compose logs admin 2>/dev/null | sed -n 's/.*[Ff]ingerprint=\([0-9A-F:]*\).*/\1/p' | tail -1)
   local where; where=$([ "$NETWORK" = lan ] && echo "$PUBLIC_HOST" || echo localhost)
+  local admin_url="https://$where:$HTTPS_PORT$ADMIN_BASE"
+  [ "$public_tls" = true ] && admin_url="$PUBLIC_URL$ADMIN_BASE"
+  local macs_url=${PUBLIC_URL:-https://$PUBLIC_HOST:$HTTPS_PORT}
   cat <<EOF
 
 ${C_G}${C_B}Senti is ready.${C_0}
 
-  Admin panel   https://$where:$HTTPS_PORT$ADMIN_BASE
+  Admin panel   $admin_url
   Sign in       $( [ "$existing" = 1 ] && echo "your existing admin account (forgot it? ./senti-server reset-password)" || echo "$ADMIN_EMAIL")
   Password      $( if [ "$existing" = 1 ]; then echo "unchanged"; elif [ "$generated" = 1 ]; then echo "$ADMIN_PASSWORD   ${C_Y}← save it now, it is shown only once${C_0}"; else echo "(the one you typed)"; fi)
 
-  Your browser will warn about the certificate the first time: Senti made its own, and that's expected.
-  ${fp:+Certificate fingerprint (to compare): $fp}
+  $( [ "$public_tls" = true ] && echo "Served through your reverse proxy's public certificate." || echo "Your browser will warn about the certificate the first time: Senti made its own, and that's expected.")
+  $( [ "$public_tls" = true ] || [ -z "$fp" ] || echo "Certificate fingerprint (to compare): $fp")
   At the first sign-in you'll scan a QR code with an authenticator app; every sign-in then needs its code.
 
 Next steps (all in the admin panel):
@@ -332,7 +354,7 @@ Next steps (all in the admin panel):
   2. Server gateway → describe in plain English what AI agents may do on this server → Generate rules → Approve.
   3. Server gateway → Add agent → copy the connect command into Claude Code or your bot.
 
-Employees' Macs connect to https://$PUBLIC_HOST:$HTTPS_PORT from anywhere; the admin panel only from: $ADMIN_ALLOW.
+Employees' Macs connect to $macs_url from anywhere; the admin panel only from: $ADMIN_ALLOW.
 Manage Senti:  ./senti-server status | logs | backup | update | reset-password | uninstall
 EOF
 }

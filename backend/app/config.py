@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     device_sig_window_s: int = 300
     # The address Macs use (goes into invite links), e.g. https://senti.acme.com:8443. Empty: the admin panel's own address.
     public_url: str = ""
+    # public_url is served with a publicly trusted certificate (e.g. Let's Encrypt on a reverse proxy in front of Senti):
+    # invites then carry no fingerprint and Macs verify the server the normal way instead of pinning Senti's own CA
+    public_tls: bool = False
     # Join page for invite links. Empty: the /join page of this server's admin panel.
     join_page: str = ""
     # The Mac installer script. Servers with Senti's own certificate need it from a publicly trusted address (it then

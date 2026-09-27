@@ -255,6 +255,21 @@ def test_public_certificate_needs_no_fingerprint(client, admin_headers, tmp_path
     assert "&fp=" not in inv["link"]
 
 
+def test_public_tls_behind_a_proxy_skips_the_own_ca(client, admin_headers, tmp_path, monkeypatch):
+    # Senti has its own CA, but Macs reach it through a reverse proxy with a public certificate (SENTI_PUBLIC_TLS)
+    from app import config
+    _make_ca_and_leaf(tmp_path)
+    monkeypatch.setattr(config.settings, "tls_ca", str(tmp_path / "ca.pem"))
+    monkeypatch.setattr(config.settings, "tls_cert", str(tmp_path / "cert.pem"))
+    monkeypatch.setattr(config.settings, "public_url", "https://senti.acme.test")
+    monkeypatch.setattr(config.settings, "public_tls", True)
+    u = client.post("/api/v1/admin/users", headers=admin_headers, json={"email": "e@acme.test", "role_id": "product"}).json()
+    inv = client.post(f"/api/v1/admin/users/{u['id']}/invites", headers=admin_headers, json={"backend": "https://srv:8443"}).json()
+    assert inv["link"] == f"https://senti.acme.test/join#s=senti.acme.test&k={inv['key']}"
+    assert inv["install_command"] == f"curl -fsSL https://senti.acme.test/install.sh | sh -s -- '{inv['link']}'"
+    assert "--fingerprint" not in inv["setup_command"]
+
+
 # ---------------------------------------------------------------- the gateway runner
 def test_gateway_fails_closed_without_the_runner(client, admin_headers, monkeypatch):
     from app import config, gateway_client
