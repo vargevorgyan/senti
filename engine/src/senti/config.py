@@ -46,6 +46,8 @@ class Settings:
     # Local judge
     local_model: str = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
     local_judge: bool = True
+    # Company Macs use the organization's cloud AI filter; no model is loaded on the Mac unless this is turned on
+    local_judge_on_company_macs: bool = False
     allow_threshold: float = 0.6
     unload_after_idle_s: int = 900
     # Behaviour

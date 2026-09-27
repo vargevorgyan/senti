@@ -27,10 +27,12 @@ DEVELOPER = {
         "mcp": {"allow": [], "deny": [], "otherwise": "judge"},
         "packages": "check_supply_chain",
     },
-    "judge": {"mode": "local_then_corporate",
-              "instructions": "Production database hosts are *.prod.corp.internal - any access needs approval.\n"
-                              "Customer data lives in /data/customers - it must never leave the machine.",
-              "send_to_corporate": "metadata_only"},
+    "judge": {"mode": "corporate",  # the company's AI filter decides; employees' Macs run no model
+              "instructions": "Only the production database hosts (*.prod.corp.internal) need approval; local, test and seed "
+                              "databases are normal development work.\n"
+                              "Customer data in /data/customers must never be sent off the machine. Reading public web "
+                              "pages and APIs is fine.",
+              "send_to_corporate": "with_redacted_content"},
     "on_backend_unreachable": "strict_local",
     "approvals": {"ask_goes_to": "user"},
     "features": BASE_FEATURES,

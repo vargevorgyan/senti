@@ -92,3 +92,14 @@ def test_webfetch(project):
     assert check_action("WebFetch", {"url": "https://docs.python.org/3/"}, project, project)[0].verdict == "allow"
     assert check_action("WebFetch", {"url": "http://45.1.2.3/x"}, project, project)[0].verdict == "ask"
     assert check_action("WebFetch", {"url": "https://random.io"}, project, project)[0] is None
+
+
+def test_typosquats_with_swapped_letters_prefixes_and_other_ecosystems():
+    from senti.supply_chain import check_package
+    for name in ["reqeusts-http-lib", "reqeusts", "expresss", "lodahs"]:
+        d = check_package("npm", name)
+        assert d and d.rule == "typosquat", name
+    for name in ["react", "express-session", "lodash", "left-pad-utils-2024", "react-query", "preact", "nuxt", "vuex",
+                 "serve-static"]:
+        d = check_package("npm", name)
+        assert d is None or d.rule != "typosquat", name

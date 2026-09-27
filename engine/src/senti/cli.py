@@ -46,7 +46,10 @@ def cmd_start(a) -> int:
     subprocess.Popen(argv, stdout=log, stderr=log, start_new_session=True, env=os.environ.copy())
     for _ in range(100):
         if _running():
-            print(f"Senti started (socket {socket_path()}). The local judge loads in the background.")
+            s = Settings.load()
+            where = "the company's AI filter" if s.device_token and not s.local_judge_on_company_macs else \
+                "the local judge (it loads in the background)"
+            print(f"Senti started (socket {socket_path()}). Unclear actions go to {where}.")
             return 0
         time.sleep(0.1)
     print(f"Senti did not start; see {senti_home() / 'engine.log'}", file=sys.stderr)

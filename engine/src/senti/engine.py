@@ -60,6 +60,9 @@ class Engine:
         self.local = LocalJudge(self.settings.local_model, self.settings.allow_threshold, self.settings.unload_after_idle_s)
         if not (use_llm and self.settings.local_judge):
             self.local.state, self.local.error = "unavailable", "local judge disabled"
+        elif self.settings.enrolled and not self.settings.local_judge_on_company_macs:
+            # company Mac: unclear actions go to the organization's AI filter; nothing heavy runs here
+            self.local.state, self.local.error = "unavailable", "this Mac uses the company's AI filter"
         from .config import tls_verify
         self.remote = RemoteJudge(self.settings.backend_url, self.settings.device_token, self.settings.judge_timeout_s,
                                   tls_verify(self.settings), self.settings.backend_public_key, self.settings.device_id) \
@@ -295,7 +298,7 @@ class Engine:
         if script_text and single and not facts.get("script_args") and not facts.get("inline_code") \
                 and len(facts.get("scripts", [])) == 1 and not facts.get("unknown") and not facts.get("net") \
                 and not facts.get("hosts") and not facts.get("writes") and not facts.get("sudo") \
-                and (profile.get("judge") or {}).get("mode", "local") in {"local", "local_then_corporate"}:
+                and (profile.get("judge") or {}).get("mode", "local") != "none":
             pk = hashlib.sha256((a.agent + "\0" + str(profile.get("id")) + str(profile.get("version")) + "\0" + task + "\0"
                                  + script_text.split("\n", 1)[1]).encode()).hexdigest()
             if pk in self.prefetch:
@@ -347,7 +350,8 @@ class Engine:
         async def corporate() -> JudgeResult:
             if self.remote is None:
                 return JudgeResult("ask", source="corporate", error="this Mac is not enrolled in an organization")
-            share = jc.get("send_to_corporate", "metadata_only")
+            # the company's own AI filter needs to see what a script does; secrets are redacted before sending
+            share = jc.get("send_to_corporate", "with_redacted_content")
             content = None if share == "metadata_only" or script is None else (redact(script) if share == "with_redacted_content"
                                                                                else script)
             act = json.loads(redact(json.dumps(action, default=str))) if share != "full" else action
@@ -356,6 +360,9 @@ class Engine:
 
         if mode == "none":
             return JudgeResult("ask", "Your profile has no AI judge, so I ask about anything unclear", source="none")
+        if mode in {"local", "local_then_corporate"} and self.local.state == "unavailable" and self.remote is not None \
+                and not strict:
+            return await corporate()  # no model on this Mac: the company's AI filter decides
         if mode == "local":
             return await local()
         if mode == "corporate":
@@ -493,7 +500,8 @@ class Engine:
     # ------------------------------------------------------------------ background work
     def _maybe_prefetch(self, a: Action, project: str, profile: dict, task: str) -> None:
         """Write-time script pre-check: judge a code file the moment it is written, so running it later is instant."""
-        if a.tool not in {"Write", "Edit"} or self.local.state == "unavailable":
+        if a.tool not in {"Write", "Edit"} or (profile.get("judge") or {}).get("mode", "local") == "none" \
+                or (self.local.state == "unavailable" and self.remote is None):
             return
         path = expand(a.input.get("file_path", ""), a.cwd)
         if not path.endswith(CODE_EXT):
@@ -506,9 +514,8 @@ class Engine:
         if pk in self.prefetch:
             return
         act = {"tool": "Bash", "command": f"(agent is about to run) {os.path.basename(path)}", "cwd": short(a.cwd)}
-        instr = (profile.get("judge") or {}).get("instructions", "")
-        self.prefetch[pk] = self.spawn(asyncio.to_thread(self.local.decide, task, act, text, instr, None, True,
-                                                         self.settings.judge_timeout_s))
+        # same routing as a live decision: the company's AI filter on company Macs, the local model otherwise
+        self.prefetch[pk] = self.spawn(self.judge(profile, task, act, text, {"script": script_facts(content or "")}))
         if len(self.prefetch) > 500:
             for k in list(self.prefetch)[:100]:
                 self.prefetch.pop(k, None)

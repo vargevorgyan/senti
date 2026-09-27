@@ -53,7 +53,8 @@ Requires [uv](https://docs.astral.sh/uv/), Xcode command line tools (for the Swi
 
 ```bash
 cd engine
-uv sync --extra mlx                    # without --extra mlx: rules + corporate judge only
+uv sync                                # company Macs need no model: unclear actions go to the company's AI filter
+                                       # (personal use without a company: uv sync --extra mlx for the local Qwen3-4B judge)
 uv run senti start                     # first start downloads Qwen3-4B (~2.3 GB) in the background
 uv run senti setup --backend https://localhost:8443 --fingerprint <sha256> --key sti_…   # the command your admin sent you:
                                         # joins, starts Senti, protects your assistants, connects them to the company server
@@ -67,14 +68,19 @@ Run at login: `uv run senti service install` (LaunchAgent).
 
 ## Judge modes (per profile, set in the admin panel)
 
+The company runs **one AI filter** in its own cloud (the corporate model); employees' Macs run **no model**. Each Mac runs a
+thin Senti agent (~100 MB) that decides obvious actions itself in milliseconds and sends only unclear ones to the company AI
+(scripts with secrets redacted).
+
 | Mode | Unclear actions go to |
 |---|---|
-| Local judge | Qwen3-4B on the Mac — private, offline |
-| Corporate judge | the company model via the backend (falls back to local when the backend is unreachable) |
-| Local, then corporate | local first; corporate only when local is unsure |
+| **Company AI** (default) | the company's AI filter via the backend |
+| On each Mac | a local Qwen3-4B (personal use; company Macs use the company AI instead) |
+| Mac first, then company | only if the Mac has a model; otherwise the company AI |
 | No AI judge | always ask |
 
-Hard rules and profile denies are enforced locally and can never be overruled by any judge.
+Hard rules and profile denies are enforced on the Mac and can never be overruled by any judge; if the company AI can't be
+reached, Senti asks or blocks, never allows.
 
 ## CLI
 

@@ -24,6 +24,10 @@ sources:
 
 # Model
 
+On company Macs no model runs: unclear actions go to the company's AI filter (the corporate model) — see
+[ADR-012](/decisions/adr-012-company-cloud-ai-filter.md). The local judge below is for personal use without a company.
+
+
 **Qwen3-4B-Instruct-2507, 4-bit, via MLX** (`mlx-community/Qwen3-4B-Instruct-2507-4bit`) — the smallest model tested
 that let **zero** dangerous actions through. Process footprint 3.1–3.4 GB with model loaded; 0% CPU idle.
 See [Judge model benchmark](/research/judge-model-benchmark.md).

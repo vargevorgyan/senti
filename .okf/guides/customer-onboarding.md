@@ -22,7 +22,8 @@ sources:
 | **Admin** | Admin panel → People → *Add person and invite* (+ choose their **server access** role) → sends the one-line command | 30 s per person |
 | **Employee** | Runs the command: `senti setup --backend … --fingerprint … --key sti_…` | ~1 min |
 
-`senti setup` = join the organization → start Senti → protect the assistants that are installed (hooks) → connect them to
+Employees' Macs run **no AI model**: a thin Senti agent (~100 MB) decides obvious actions itself and sends unclear ones to the
+company's AI filter ([ADR-012](/decisions/adr-012-company-cloud-ai-filter.md)). `senti setup` = join the organization → start Senti → protect the assistants that are installed (hooks) → connect them to
 the company server (`senti connect`) → start at login. Safe to run again.[^setup]
 
 # Server installer (`./senti-server`)[^installer]

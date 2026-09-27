@@ -59,7 +59,7 @@ sources:
 docker compose up -d --build          # admin + device API https://localhost:8443 (self-signed; Devices page shows the fingerprint)
 
 # a Mac
-cd engine && uv sync --extra mlx       # Apple Silicon; drop --extra mlx for rules + corporate judge only
+cd engine && uv sync                  # company Macs: no model (company AI); personal use: uv sync --extra mlx
 uv run senti start                     # or: uv run senti service install
 uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256 from the Devices page> --code SENTI-DEMO --email you@acme.test
 uv run senti stop && uv run senti start

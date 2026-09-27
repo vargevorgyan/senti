@@ -32,15 +32,38 @@ def _norm(name: str, eco: str) -> str:
 
 
 def _dist(a: str, b: str) -> int:
+    """Edit distance where swapping two neighbouring letters counts as one edit ("reqeusts" → "requests")."""
     if abs(len(a) - len(b)) > 2:
         return 3
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
+    d = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        d[i][0] = i
+    for j in range(len(b) + 1):
+        d[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def _typosquat_of(name: str, eco: str, d: dict) -> tuple[str, str] | None:
+    """The popular package `name` (or its leading part, e.g. "reqeusts" in "reqeusts-http-lib") imitates, in any ecosystem."""
+    # agents mix up JavaScript and Python names ("requests" on npm), not names from unrelated ecosystems
+    related = {"npm": ["pypi"], "pypi": ["npm"]}.get(eco, [])
+    ecos = [eco] + [e for e in related if e in d.get("popular", {})]
+    known = {p for e in ecos for p in d.get("popular", {}).get(e, [])}
+    parts = {name}
+    head = re.split(r"[-_.]", name.lstrip("@").split("/")[-1])[0]
+    if len(head) >= 5 and head not in known:  # "react-query" builds on "react"; it doesn't imitate "preact"
+        parts.add(head)
+    for e in ecos:
+        for p in d.get("popular", {}).get(e, []):
+            for part in parts:
+                if len(part) >= 4 and (_dist(part, p) == 1 or (part.replace("-", "") == p.replace("-", "") and part != p)):
+                    return p, e
+    return None
 
 
 URL_SPEC = re.compile(r"(://|^git\+|^github:|^gitlab:|^bitbucket:|^file:|^link:|\.tgz$|\.tar\.gz$|\.whl$|\.zip$|^[\w.-]+/[\w.-]+$|\s*@\s*\w+://)")
@@ -66,8 +89,10 @@ def check_package(manager: str, raw: str) -> Decision | None:
     popular = d.get("popular", {}).get(eco, [])
     if name in popular or not name:
         return Decision("allow", f"Installs a well-known package ({name})", "L2-supply-chain", "popular_package")
-    for p in popular:
-        if len(name) >= 4 and _dist(name, p) == 1 or name.replace("-", "") == p.replace("-", "") and name != p:
-            return Decision("ask", f"Installs '{name}', which looks like a misspelling of the popular package '{p}' (typosquatting)",
-                            "L2-supply-chain", "typosquat", severity="warning")
+    hit = _typosquat_of(name, eco, d)
+    if hit:
+        p, e = hit
+        where = "" if e == eco else f" ({e})"
+        return Decision("ask", f"Installs '{name}', which looks like a misspelling of the popular package '{p}'{where} (typosquatting)",
+                        "L2-supply-chain", "typosquat", severity="warning")
     return None  # unknown package → profile / judge

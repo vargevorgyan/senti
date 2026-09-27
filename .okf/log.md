@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Decision**: [ADR-012](/decisions/adr-012-company-cloud-ai-filter.md) — one company AI filter in the cloud; employees' Macs run no model (thin agent ~100 MB), scripts sent with secrets redacted, pre-checks via the company AI; measured in [Company AI filter](/research/company-ai-filter.md); typosquat check fixed (0/226 false alarms).
 * **Creation**: [Customer onboarding](/guides/customer-onboarding.md) — `./senti-server` installer/manager, `senti setup` (one step for employees), `senti connect` + `senti mcp` bridge so assistants reach the gateway without certificate or token handling; per-person server role.
 * **Creation**: [Server gateway](/architecture/server-gateway.md) — MCP endpoint in the backend; plain-English policy compiled to role rules with reviewed examples; hard rules + SQLite authorizer + supervisor LLM; tested with a real MCP client and a real Claude Code session — [ADR-011](/decisions/adr-011-server-gateway.md).
 * **Update**: Personal invite keys replace shared enrollment codes (admin adds a person → one-time, hashed, expiring key → `senti enroll --key`); `/judge` only accepts the device's own profiles and is rate limited per device, as are approvals — [Org backend](/architecture/org-backend-and-profiles.md).

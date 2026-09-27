@@ -4,9 +4,9 @@ import { AGENTS, api, type Otherwise, type Profile, type ProfileData, type Role 
 import { ChipInput, useLoad, useToast } from '../components/ui'
 
 const MODES = [
-  { v: 'local', label: 'Local judge', text: 'Qwen on each Mac decides. Private and works offline.' },
-  { v: 'corporate', label: 'Corporate judge', text: 'The company model decides, with company context.' },
-  { v: 'local_then_corporate', label: 'Local, then corporate', text: 'Local first; escalates only when unsure.' },
+  { v: 'corporate', label: 'Company AI (recommended)', text: 'The company’s AI filter decides unclear actions. Nothing to run on employees’ Macs.' },
+  { v: 'local', label: 'On each Mac', text: 'A model on the Mac decides (personal use; company Macs use the company AI instead).' },
+  { v: 'local_then_corporate', label: 'Mac first, then company', text: 'Only if the Mac has a model; otherwise the company AI decides.' },
   { v: 'none', label: 'No AI judge', text: 'Anything unclear is asked about.' },
 ] as const
 const OTHERWISE: { v: Otherwise; label: string }[] = [{ v: 'judge', label: 'Let the judge decide' }, { v: 'ask', label: 'Ask first' }, { v: 'block', label: 'Block' }, { v: 'allow', label: 'Allow' }]

@@ -105,7 +105,7 @@ deterministically, and both judge prompts now say policy notes override the mode
 # Security
 
 Signed bundles; device tokens stored hashed; revocation (`401` → engine keeps last verified profile, marks backend unreachable);
-metadata-only by default and secrets redacted before content is sent; hard rules always local; admin JWT secret random per
+script contents sent to the company AI with secrets redacted by default (ADR-012; `metadata_only` per profile); hard rules always local; admin JWT secret random per
 install unless set; admin changes recorded in the change log.
 
 # Backend API (implemented, prefix `/api/v1`)

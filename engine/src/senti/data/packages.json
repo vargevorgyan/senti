@@ -124,7 +124,13 @@
    "mocha",
    "chai",
    "sinon",
-   "supertest"
+   "supertest",
+   "preact",
+   "nuxt",
+   "vuex",
+   "serve-static",
+   "pinia",
+   "reselect"
   ],
   "pypi": [
    "requests",

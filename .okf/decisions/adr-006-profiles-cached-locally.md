@@ -20,5 +20,5 @@ Local Senti agent caches signed profiles (SSE/WebSocket push). Judge router per 
 Hard rules always local; backend unreachable → strict local mode.
 
 # Consequences
-Near-zero added latency for rule decisions; admin changes apply within seconds; corporate model sees metadata only by default.
+Near-zero added latency for rule decisions; admin changes apply within seconds; corporate model sees metadata only by default (changed by [ADR-012](/decisions/adr-012-company-cloud-ai-filter.md): scripts are now sent with secrets redacted).
 See [Org backend and profiles](/architecture/org-backend-and-profiles.md).
