@@ -42,7 +42,7 @@ services:
     ports:
       # HTTPS for the admin panel and the device API (TLS by default); HTTP only redirects
       - "${SENTI_BIND:-127.0.0.1}:${SENTI_HTTPS_PORT:-8443}:443"
-      - "${SENTI_BIND:-127.0.0.1}:${SENTI_ADMIN_PORT:-8080}:80"
+      - "${SENTI_BIND:-127.0.0.1}:${SENTI_ADMIN_PORT:-8081}:80"
 
   # The "corporate model": a small open model served by Ollama (CPU inside Docker, fits a 16 GB laptop).
   # Swap for a real company endpoint by setting SENTI_CORP_MODEL_URL / SENTI_CORP_MODEL (or in the admin panel).
