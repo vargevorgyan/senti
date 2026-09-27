@@ -29,10 +29,11 @@ Live updates arrive over one `EventSource` (`/api/v1/admin/stream?token=`).[^adm
 | Overview | First-person summary ("In the last 24 hours I checked N actions, stopped B and asked about A"), per-hour chart, by agent, top rules, recent blocks as Blocked alerts, live feed |
 | Activity | Filter/search every decision, expand for task, layer, profile, input; CSV export; new rows stream in |
 | Approvals | Answer `ask` requests routed to the owner/admin (ApprovalPrompt component: Block primary, Allow once) |
-| Profiles / editor | Judge mode (local, corporate, local then corporate, none), company instructions, privacy of corporate calls, files/network/shell/MCP/packages rules, per-agent overrides (e.g. "no network for OpenCode"), protections (undo, decoys, injection warnings, task scope, sandbox), who answers ask, offline behaviour. Save pushes to Macs within ~0.2 s |
-| People and roles | Role per person, per-agent profile override per person, role CRUD |
-| Devices | Enroll command + enrollment codes per role, device status (online, local judge state, profile version), revoke |
+| Profiles / editor | Judge mode (**Company AI** — default and recommended; on each Mac; Mac first then company; none), company instructions, privacy of corporate calls, files/network/shell/MCP/packages rules, per-agent overrides (e.g. "no network for OpenCode"), protections (undo, decoys, injection warnings, task scope, sandbox), who answers ask, offline behaviour. Save pushes to Macs within ~0.2 s |
+| People and roles | **Add person and invite** (one-time `sti_` key, 48 h, copy-once `senti setup` command), invite status ("Joined from <Mac>"), role per person, **server access** role for the gateway, per-agent profile override, role CRUD |
+| Devices | Points to People for invites (shared codes are off); legacy codes list; device status (online, judge, profile version), revoke |
 | Corporate judge | OpenAI-compatible endpoint/model/key, reachability, playground with profile instructions and p(allow/ask/block) |
+| **Server gateway** | Plain-English policy → Generate rules → review role cards, warnings and example actions → Approve; agents (bot tokens shown once, connect commands, revoke); live gateway activity |
 | Change log | Who changed what |
 
 # Design

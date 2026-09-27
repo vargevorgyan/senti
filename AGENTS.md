@@ -21,8 +21,12 @@ The project knowledge base lives in [`.okf/`](.okf/index.md) (Open Knowledge For
 
 Read [`TASKS.md`](TASKS.md) for current status and the next work items, and [`.okf/code-guide.md`](.okf/code-guide.md) for details.
 
-- `engine/` — the local engine (Python package `senti`, FastAPI on a Unix socket), CLI, Swift hook client, agent plugins. Runs natively on the Mac, never in Docker. Tests: `cd engine && uv run pytest -q`.
-- `backend/` — organization backend (FastAPI + SQLite), `admin/` — React admin panel; both in Docker (`docker-compose.yml`). Tests: `cd backend && uv run pytest -q`, `cd admin && npx playwright test`.
+- `engine/` — the thin agent on each Mac (Python package `senti`, FastAPI on a Unix socket): rules, detectors, CLI (`senti setup`,
+  `senti connect`, `senti mcp` bridge), Swift hook client, agent plugins. No AI model on company Macs (ADR-012). Tests: `cd engine && uv run pytest -q`.
+- `backend/` — organization backend (FastAPI + SQLite): admin API, device API, company AI filter gateway, invites, **MCP server
+  gateway** (`routers/gateway.py`, `gateway_policy.py`, `policy_compiler.py`); `admin/` — React admin panel; both in Docker.
+  Tests: `cd backend && uv run pytest -q`, `cd admin && npx playwright test`.
+- `senti-server` — installer and manager for the company side (install, status, update, backup, restore, reset-password, uninstall).
 - `scripts/`, `demo/` — end-to-end checks, the labelled simulation, the held-out judge check and the poisoned demo repo; `TASKS.md` — task board.
 - `prototype/` — the original ideathon prototype and benchmarks (reference only).
 - There is **no client UI app**: asking the person uses the agent's own prompt, a macOS dialog, or owner approvals in the admin panel (ADR-010).

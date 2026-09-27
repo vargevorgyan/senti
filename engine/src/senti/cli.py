@@ -386,7 +386,11 @@ def cmd_setup(a) -> int:
 
 def cmd_mcp(a) -> int:
     from .mcp_bridge import run
-    return run(a.backend, a.token, a.fingerprint)
+    try:
+        return run(a.backend, a.token, a.fingerprint)
+    except (RuntimeError, OSError) as e:  # e.g. certificate fingerprint mismatch, server unreachable
+        print(f"senti mcp: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_connect(a) -> int:

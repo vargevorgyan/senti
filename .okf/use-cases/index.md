@@ -22,3 +22,4 @@ What people use Senti for, who they are, what Senti does in each situation and h
 
 * [Audit trail and spotting a compromised agent](audit-and-incident-response.md) - Every decision is logged tamper-evidently and uploaded; decoy secrets catch hijacked agents; the security team investigates from one timeline.
 * [One policy for every agent vendor](one-policy-for-every-agent-vendor.md) - Claude Code, Codex (ChatGPT) and OpenCode are governed by the same rules and the same log, regardless of which company made the agent.
+* [AI agents working on the company server, with rules in plain English](agents-on-the-company-server.md) - Support and analytics agents use a server's files, database and commands only through Senti's gateway; the admin describes access in plain English and a supervisor model handles the rest.

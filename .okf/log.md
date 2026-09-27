@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Update**: Documentation catch-up — new guides ([server installer](/guides/server-installer.md), [connecting assistants](/guides/connecting-assistants.md), [writing a server policy](/guides/writing-server-policy.md)), [Access and credentials](/architecture/access-and-credentials.md), [server-gateway use case](/use-cases/agents-on-the-company-server.md); getting started, system overview, admin panel, glossary, demo plan, AGENTS.md and README now describe the company AI filter, the MCP gateway, invites and the installer.
 * **Decision**: [ADR-012](/decisions/adr-012-company-cloud-ai-filter.md) — one company AI filter in the cloud; employees' Macs run no model (thin agent ~100 MB), scripts sent with secrets redacted, pre-checks via the company AI; measured in [Company AI filter](/research/company-ai-filter.md); typosquat check fixed (0/226 false alarms).
 * **Creation**: [Customer onboarding](/guides/customer-onboarding.md) — `./senti-server` installer/manager, `senti setup` (one step for employees), `senti connect` + `senti mcp` bridge so assistants reach the gateway without certificate or token handling; per-person server role.
 * **Creation**: [Server gateway](/architecture/server-gateway.md) — MCP endpoint in the backend; plain-English policy compiled to role rules with reviewed examples; hard rules + SQLite authorizer + supervisor LLM; tested with a real MCP client and a real Claude Code session — [ADR-011](/decisions/adr-011-server-gateway.md).

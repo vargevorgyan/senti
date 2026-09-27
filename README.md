@@ -17,13 +17,18 @@ Organizations add a backend and an admin panel that push role-based profiles to 
 
 ```
 Claude Code · Codex · OpenCode · Cursor · Cline · Hermes · OpenClaw
-        │  hooks / plugin (senti-hook, fail closed)
-        ▼
-Senti engine (per Mac, FastAPI on ~/.senti/senti.sock)          ┌── Organization (docker compose) ──────────┐
-  honeytokens → rules → profile → detectors → cache → judge ◄──►│ backend (FastAPI + SQLite)                │
-  local judge: Qwen3-4B (MLX)   corporate judge: via backend    │ admin panel (React, nginx)  :8443         │
-  undo snapshots · hash-chained audit · sandbox profiles        │ corporate model (Ollama, qwen2.5:3b)      │
-                                                                └───────────────────────────────────────────┘
+        │ hooks / plugin (fail closed)                         │ MCP "company-server"
+        ▼                                                      ▼
+Thin Senti agent (per Mac, ~100 MB, no AI model)          local bridge (senti mcp)
+  honeytokens → rules → profile → detectors → cache ──┐            │
+  undo snapshots · hash-chained audit · sandbox        │ unclear    │
+                                                       ▼ actions    ▼
+                          ┌── Company cloud (./senti-server, Docker) ─────────────────────────┐
+                          │ backend (FastAPI + SQLite) · admin panel (React) :8443             │
+                          │ company AI filter (Ollama or any OpenAI-compatible API)            │
+                          │ MCP server gateway → shared files · SQLite · commands, plain-English│
+                          │   role rules + supervisor                                          │
+                          └────────────────────────────────────────────────────────────────────┘
 ```
 
 There is **no client UI app**: "ask" uses the agent's own prompt (Claude Code) or a macOS dialog (Codex, OpenCode), or goes to
@@ -85,6 +90,9 @@ reached, Senti asks or blocks, never allows.
 ## CLI
 
 ```
+senti setup --backend URL --fingerprint FP --key sti_…   one step for employees (join, start, protect, connect, start at login)
+senti connect [assistant] [--remove]                      add/remove the company server in Claude Code, Claude Desktop, Cursor, Codex, OpenCode
+senti mcp                          local MCP bridge to the company's server gateway (used by the assistants)
 senti start|stop|status            run the engine
 senti install|uninstall <agent>    claude codex opencode cursor cline hermes openclaw | all  [--project DIR]
 senti enroll / unenroll            join or leave an organization
@@ -139,6 +147,13 @@ cd backend && uv run pytest -q       # backend API
 cd admin && npx playwright test      # admin UI against the running stack
 SENTI_SOCKET=~/.senti/senti.sock uv run --project engine python scripts/e2e_modes.py   # live end-to-end
 ```
+
+## Documentation
+
+The knowledge base is in [`.okf/`](.okf/index.md). Guides: [customer onboarding](.okf/guides/customer-onboarding.md),
+[server installer](.okf/guides/server-installer.md), [connecting assistants](.okf/guides/connecting-assistants.md),
+[writing a server policy](.okf/guides/writing-server-policy.md); architecture: [system overview](.okf/architecture/system-overview.md),
+[server gateway](.okf/architecture/server-gateway.md), [access and credentials](.okf/architecture/access-and-credentials.md).
 
 ## Repository
 

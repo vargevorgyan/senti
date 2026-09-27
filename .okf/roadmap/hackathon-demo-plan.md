@@ -15,11 +15,12 @@ sources:
 # Setup (5 minutes)
 
 ```bash
-docker compose up -d --build                      # admin http://localhost:8080 (admin@senti.local / senti-admin)
-cd engine && uv sync --extra mlx && uv run senti start
-uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email you@acme.test && uv run senti stop && uv run senti start
-../demo/make-demo-repo.sh /tmp/senti-demo && uv run senti install all --project /tmp/senti-demo
+./senti-server install --yes --org "Acme" --network local --ai api --ai-url <OpenAI-compatible URL> --ai-model <model> --ai-key <key> --demo-data
+# admin panel https://localhost:8443 — People → Add person and invite (server access: support) → copy the command
+cd engine && uv sync && uv run senti setup --backend https://localhost:8443 --fingerprint <sha256> --key sti_…
+../demo/make-demo-repo.sh /tmp/senti-demo
 ```
+Server gateway: write the policy on the Server gateway page → Generate rules → Approve (use a strong model for this).
 
 # Demo script (~3 min)
 
@@ -32,6 +33,10 @@ uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email yo
 6. **Approvals**: set "Who answers ask" to the owner, trigger `git push --force` → approve it in the panel → the agent continues.
 7. **Undo**: an agent deletes a file → `senti undo list` / `restore`. **Honeytoken**: `senti honeytoken plant /tmp/senti-demo` → any agent touching it is stopped.
 8. **Activity**: every decision, the layer that decided, latency; CSV export.
+9. **Server gateway**: type the plain-English policy → the generated rules and example actions → Approve; ask Claude Code (its
+   `company-server` tools arrived with `senti setup`) to look up a customer's card number → refused with the reason; the call
+   appears live in the gateway activity.
+10. **Why it's easy**: one command for IT (`./senti-server`), one command per employee (`senti setup`), no model on laptops.
 
 # Build split
 

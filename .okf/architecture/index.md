@@ -12,3 +12,4 @@
 * [Local model gateway (DIY agents)](model-gateway.md) - OpenAI-compatible proxy on 127.0.0.1:11435 in front of Ollama/LM Studio that checks every tool call a model proposes before a hook-less agent sees it.
 * [Senti macOS app](macos-app.md) - *(superseded by ADR-010)* Planned native SwiftUI menu-bar app — approval popup, activity log, per-agent settings — that fronts the local engine.
 * [Server gateway (MCP) — plain-English policy, supervisor-enforced](server-gateway.md) - An MCP endpoint through which AI agents use a company server's files, commands and database; an admin describes access in plain English, Senti compiles role rules, and a supervisor model decides what the rules don't cover.
+* [Access and credentials](access-and-credentials.md) - Every credential in Senti (admin login, invite keys, device tokens, agent tokens, hook token), how each is issued, stored, limited and revoked, and the enrollment and device-API protections.

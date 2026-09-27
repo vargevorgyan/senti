@@ -4,7 +4,7 @@ title: Start here — Senti in five minutes
 description: Orientation for agents and people new to Senti; what it is, where things are, and which concepts to read next.
 tags: [getting-started, overview]
 status: stable
-generated: { by: claude-code/2.1.283, at: '2026-09-27T02:00:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T16:00:00Z' }
 stale_after: 2026-12-31
 sources:
   - id: session
@@ -26,32 +26,35 @@ commands, file reads/writes, web requests, MCP tool calls — **before** it runs
 - **asks** the user about suspicious ones, in plain language,
 - **allows** normal development work silently.
 
-Decisions are made by a cascade of fast rules plus a **local LLM** (Qwen3-4B), so monitored
-activity never has to leave the machine. An organization version adds an **admin backend**
-that defines profiles per user/role/agent and can route decisions to a **corporate model**.[^session][^concept-draft]
+Two things work together, both set up once by the company:
 
-Started at an ideathon on 2026-09-26; fully built on 2026-09-27. **No client UI app**: the Mac runs hooks + a local engine;
-the organization side (backend, admin panel, corporate model) runs in Docker ([ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md)).
+1. **Hook filter on every employee's Mac.** A thin Senti agent (~100 MB, **no AI model on the Mac**) decides obvious actions
+   itself in milliseconds and sends unclear ones to the **company's AI filter** in the company cloud
+   ([ADR-012](/decisions/adr-012-company-cloud-ai-filter.md)). Hard rules still protect when the cloud is unreachable.
+2. **Server gateway (MCP).** Agents reach the company server's files, database and commands only through Senti; the admin
+   describes access per role in plain English and a supervisor model decides what the rules don't cover
+   ([Server gateway](/architecture/server-gateway.md), [ADR-011](/decisions/adr-011-server-gateway.md)).[^session][^concept-draft]
+
+Started at an ideathon on 2026-09-26; built on 2026-09-27. **No client UI app** ([ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md)).
 
 # Status (2026-09-27)
 
 | Item | State |
 |---|---|
-| Name / repo | Senti · `github.com/vargevorgyan/senti` (private); full build on `main` (pushed 2026-09-27) |
-| Local engine | `engine/` — Python package `senti`, FastAPI on a Unix socket, CLI; 68 tests |
-| Hooks | Claude Code, Codex CLI, OpenCode — all tested live |
-| Org backend | `backend/` — FastAPI + SQLite, Docker; 13 tests |
-| Admin panel | `admin/` — React, Docker (nginx), designer's design system; 7 Playwright tests |
-| Corporate model | Ollama container (`qwen2.5:3b`), any OpenAI-compatible endpoint |
-| End-to-end | `scripts/e2e_modes.py` 14/14 (all judge modes, push, overrides, approvals, audit) |
-| Task board | `/TASKS.md` in the repo root — done / remaining work for the next agent |
+| Repo | `github.com/vargevorgyan/senti` (private), work on `main` |
+| Company side | `./senti-server` installer → backend (FastAPI + SQLite), admin panel (React), company AI (Ollama or any OpenAI-compatible API), MCP gateway — Docker |
+| Employee Mac | `senti setup --key …` (from the invite): join, start, protect installed assistants, connect them to the company server, start at login |
+| Assistants | Claude Code, Codex CLI, OpenCode tested live; Cursor, Cline, Hermes, OpenClaw built, not live-tested |
+| Tests | engine 278, backend 106, admin Playwright 7; e2e judge modes 14/14 |
+| Task board | `/TASKS.md` — done / remaining work |
 
 # Read next
 
-1. [Code guide](/code-guide.md) — where the code is and how to run it.
-2. [System overview](/architecture/system-overview.md) — parts and how they connect.
+1. [Customer onboarding](/guides/customer-onboarding.md) — the whole flow in three steps; then the other [Guides](/guides/).
+2. [System overview](/architecture/system-overview.md) — parts and how they connect; [Code guide](/code-guide.md) — where the code is.
 3. [Decision engine](/architecture/decision-engine.md) and [LLM judge](/architecture/llm-judge.md).
-4. [Organization backend and profiles](/architecture/org-backend-and-profiles.md) and [Admin panel](/architecture/admin-panel.md).
+4. [Organization backend and profiles](/architecture/org-backend-and-profiles.md), [Admin panel](/architecture/admin-panel.md),
+   [Access and credentials](/architecture/access-and-credentials.md) and [Server gateway](/architecture/server-gateway.md).
 5. [Agent coverage](/integrations/agent-coverage.md), [Real-agent tests](/research/real-agent-tests.md) and [Real incidents replayed](/research/agent-incidents.md) (evidence for the pitch).
 6. [Demo plan](/roadmap/hackathon-demo-plan.md), [Roadmap](/roadmap/roadmap.md), [Open questions](/roadmap/open-questions.md).
 7. [Problem](/business/problem.md), [Value proposition](/business/value-proposition.md) and [Use cases](/use-cases/) — why this exists and who it serves.
