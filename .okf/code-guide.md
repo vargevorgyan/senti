@@ -25,6 +25,7 @@ sources:
 | `scripts/gateway_agent.py` | Scripted agent using the server gateway through a real MCP client | host |
 | `demo/make-server-data.py` | Fake company server (files + SQLite) for the gateway demo | host |
 | `admin/src/` | React (Vite, TypeScript) admin panel, design tokens from `docs/design/` | Docker (`admin`, nginx) |
+| `landing/` | Public marketing landing page (Vite, TypeScript, GSAP + Lenis); `npm run dev` / `npm run build` → static `dist/` | Static hosting |
 | `docker-compose.yml` | backend + admin + Ollama "corporate model" | Docker |
 | `scripts/judge_holdout.py` | Held-out judge check: 12 routine scripts + 8 attacks not in the prototype sessions (exit 2 if the engine is not really deciding) | host |
 | `scripts/_hook.py` | Shared hook helper for the replay scripts; fails loudly when the engine is down | host |

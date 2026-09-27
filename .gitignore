@@ -28,6 +28,7 @@ engine/hook/senti-hook
 .venv/
 node_modules/
 admin/dist/
+landing/dist/
 backend/data/
 *.senti-backup-*
 
@@ -41,3 +42,4 @@ admin/playwright-report/
 server-data/
 senti-backup-*.tar.gz
 .env.bak.*
+.gstack/
