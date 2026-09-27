@@ -1,4 +1,4 @@
-"""Adapters and installers for Cursor, Cline, Antigravity, ZCode, Hermes Agent and OpenClaw (added 2026-09-27).
+"""Adapters and installers for Cursor, Cline, Hermes Agent and OpenClaw (added 2026-09-27).
 Payload samples follow each agent's documentation / source (see .okf/integrations/)."""
 import json
 import os
@@ -79,27 +79,6 @@ async def test_cline_multi_strictest(project):
     assert (await eng().handle(adapters.parse("cline", ev)))["decision"].verdict == "block"
 
 
-# ---------------------------------------------------------------- Antigravity
-def test_antigravity(project):
-    a = adapters.parse("antigravity", {"toolCall": {"name": "run_command", "args": {"CommandLine": "npm test", "Cwd": project}},
-                                       "workspacePaths": [project], "conversationId": "c"})
-    assert (a.tool, a.input["command"], a.cwd) == ("Bash", "npm test", project)
-    assert json.loads(adapters.render("antigravity", a, BLOCK, None))["decision"] == "deny"
-    assert json.loads(adapters.render("antigravity", a, ASK, None))["decision"] == "ask"
-    w = adapters.parse("antigravity", {"toolCall": {"name": "write_to_file", "args": {"TargetFile": "/tmp/x.py", "CodeContent": "print(1)"}}})
-    assert w.tool == "Write" and w.input["content"] == "print(1)"
-    u = adapters.parse("antigravity", {"toolCall": {"name": "read_url_content", "args": {"Url": "https://x.io"}}})
-    assert u.tool == "WebFetch"
-
-
-# ---------------------------------------------------------------- ZCode (Claude protocol)
-def test_zcode_uses_claude_protocol(project):
-    a = adapters.parse("zcode", {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": project})
-    assert a.agent == "zcode" and a.tool == "Bash"
-    out = json.loads(adapters.render("zcode", a, ASK, None))["hookSpecificOutput"]
-    assert out["permissionDecision"] == "ask"
-
-
 # ---------------------------------------------------------------- Hermes
 def test_hermes(project):
     a = adapters.parse("hermes", {"hook_event_name": "pre_tool_call", "tool_name": "terminal", "tool_input": {"command": "ls"},
@@ -156,18 +135,6 @@ def test_install_cline_keeps_user_hooks(fake_home):
     assert not (d / "PreToolUse").exists() and (d / "PostToolUse").exists()
 
 
-def test_install_antigravity_and_zcode(fake_home):
-    p = installers.install_antigravity()
-    assert json.loads(p.read_text())["senti"]["PreToolUse"][0]["hooks"][0]["command"].endswith("antigravity pre")
-    z = installers.install_zcode()
-    ev = json.loads(z.read_text())["hooks"]["events"]
-    assert ev["PreToolUse"][0]["hooks"][0]["args"] == ["zcode", "pre"]
-    with pytest.raises(ValueError):
-        installers.install_zcode("/tmp/proj")
-    installers.uninstall_antigravity()
-    assert "senti" not in json.loads(p.read_text())
-
-
 def test_install_hermes(fake_home):
     import yaml
     (fake_home / ".hermes").mkdir()
@@ -191,7 +158,6 @@ def test_install_openclaw(fake_home):
 
 
 @pytest.mark.parametrize("agent,needle", [("cursor", '"permission":"deny"'), ("cline", '"cancel":true'), ("hermes", '"decision":"block"'),
-                                          ("antigravity", '"decision":"deny"'), ("zcode", '"permissionDecision":"deny"'),
                                           ("openclaw", '"verdict":"block"')])
 def test_hook_binary_fails_closed(agent, needle, tmp_path):
     import subprocess

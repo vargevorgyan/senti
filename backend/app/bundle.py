@@ -10,7 +10,7 @@ from .config import settings
 from .models import KV, ChangeLog, Device, Profile
 from .signing import sign
 
-AGENTS = ["claude", "codex", "opencode", "cursor", "cline", "antigravity", "zcode", "hermes", "openclaw", "generic"]
+AGENTS = ["claude", "codex", "opencode", "cursor", "cline", "hermes", "openclaw", "generic"]
 
 
 def bump(db: Session, actor: str, action: str, target: str = "", detail: dict | None = None) -> int:

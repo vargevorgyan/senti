@@ -28,5 +28,4 @@ sources:
 # Status
 
 Adapter, installer, uninstaller and fail-closed hook replies are implemented and covered by `engine/tests/test_more_agents.py`.
-Not yet exercised with the real agent (it isn't installed on the dev Mac, except Antigravity, whose live test would use the
-person's Google account). Peer-process verification is recorded but not enforced for this agent until it is tested live.
+Not yet exercised with the real agent (it isn't installed on the dev Mac). Peer-process verification is recorded but not enforced for this agent until it is tested live.

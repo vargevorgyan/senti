@@ -78,8 +78,6 @@ export const AGENTS = [
   { id: 'opencode', name: 'OpenCode' },
   { id: 'cursor', name: 'Cursor' },
   { id: 'cline', name: 'Cline' },
-  { id: 'antigravity', name: 'Antigravity' },
-  { id: 'zcode', name: 'ZCode' },
   { id: 'hermes', name: 'Hermes' },
   { id: 'openclaw', name: 'OpenClaw' },
 ]

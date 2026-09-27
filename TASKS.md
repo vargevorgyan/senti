@@ -48,10 +48,9 @@ Legend: [x] done · [~] partial · [ ] todo
 - [x] "Ask" handling: Claude native prompt; macOS dialog for Codex/OpenCode (Always allow → allowlist); owner/admin approvals via backend
 
 ### More agents (2026-09-27)
-- [x] Agent registry (`agents.py`); adapters + installers + fail-closed hook replies for Cursor, Cline, Antigravity, ZCode, Hermes Agent, OpenClaw (`tests/test_more_agents.py`)
-- [ ] Live tests with the real agents (only Antigravity is installed here; needs the owner's OK because it uses their Google account)
+- [x] Agent registry (`agents.py`); adapters + installers + fail-closed hook replies for Cursor, Cline, Hermes Agent, OpenClaw (ZCode and Antigravity dropped by the owner) (`tests/test_more_agents.py`)
+- [ ] Live tests with the real agents (none of the four is installed on the dev Mac)
 - [ ] Enforce peer verification for these agents once their process names are confirmed live
-- [ ] Antigravity: task context (no prompt event; could read `transcriptPath`)
 
 ### Org backend (Docker) — `backend/`
 - [x] FastAPI + SQLite models: admins, roles, users, profiles, devices, enrollment codes, events, approvals, KV, change log
@@ -113,3 +112,4 @@ cd admin && npx playwright test
 - 2026-09-27: Remaining items done — JWT revocation/SSE tickets, TLS + pinning, peer-process verification, required sandbox, secret brokering, model gateway; second review (15+ findings) fixed. Engine 161 tests, backend 22, Playwright 7, e2e 14/14.
 - 2026-09-27: Review leftovers fixed (see security review, third pass). Engine 175 tests, backend 24, Playwright 7, e2e 14/14.
 - 2026-09-27: Six more agents (Cursor, Cline, Antigravity, ZCode, Hermes, OpenClaw): adapters, installers, docs; unit-tested, not live-tested. Engine 196 tests.
+- 2026-09-27: ZCode and Antigravity support removed at the owner's request.

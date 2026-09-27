@@ -9,7 +9,7 @@ from .config import settings
 from .models import KV, Admin, EnrollmentCode, Profile, Role
 from .security import hash_password
 
-AGENTS = ["claude", "codex", "opencode", "cursor", "cline", "antigravity", "zcode", "hermes", "openclaw"]
+AGENTS = ["claude", "codex", "opencode", "cursor", "cline", "hermes", "openclaw"]
 
 BASE_FEATURES = {"undo": True, "honeytokens": True, "injection_scan": True, "scope_contract": False, "sandbox": False}
 

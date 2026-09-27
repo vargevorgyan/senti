@@ -183,43 +183,6 @@ def parse_cline(ev: dict) -> Action:
     return _multi("cline", _cline_actions(tool, params), cwd, session, tool)
 
 
-ANTIGRAVITY_TOOLS = {"view_file": "Read", "view_file_outline": "Read", "view_code_item": "Read", "list_dir": "LS", "find_by_name": "Glob",
-                     "grep_search": "Grep", "codebase_search": "Grep", "search_web": "WebSearch", "read_url_content": "WebFetch",
-                     "task_boundary": "TodoWrite", "notify_user": "TodoWrite"}
-
-
-def parse_antigravity(ev: dict) -> Action:
-    cwd = (ev.get("workspacePaths") or [os.getcwd()])[0]
-    session = ev.get("conversationId", "")
-    call = ev.get("toolCall") or {}
-    name, args = call.get("name", ""), dict(call.get("args") or {})
-    post = "error" in ev or ev.get("hookEventName") == "PostToolUse" or ev.get("__event") == "post"
-    event = "post_tool" if post else "pre_tool"
-    path = args.get("AbsolutePath") or args.get("TargetFile") or args.get("DirectoryPath") or args.get("SearchPath") or args.get("File") or ""
-    if name == "run_command":
-        return Action("antigravity", "Bash", {"command": args.get("CommandLine", "")}, args.get("Cwd") or cwd, session, event, name)
-    if name == "write_to_file":
-        return Action("antigravity", "Write", {"file_path": path, "content": args.get("CodeContent", "")}, cwd, session, event, name)
-    if name in {"replace_file_content", "multi_replace_file_content"}:
-        new = args.get("ReplacementContent") or "\n".join(str(c.get("ReplacementContent", "")) for c in args.get("ReplacementChunks") or []
-                                                         if isinstance(c, dict))
-        return Action("antigravity", "Edit", {"file_path": path, "old_string": args.get("TargetContent", ""), "new_string": new},
-                      cwd, session, event, name)
-    t = ANTIGRAVITY_TOOLS.get(name)
-    if t == "WebFetch":
-        return Action("antigravity", t, {"url": args.get("Url") or args.get("url", "")}, cwd, session, event, name)
-    if t == "WebSearch":
-        return Action("antigravity", t, {"query": args.get("query") or args.get("Query", "")}, cwd, session, event, name)
-    if t in {"Read", "LS", "Glob", "Grep"}:
-        return Action("antigravity", t, {"file_path": path, "path": path, "pattern": args.get("Query") or args.get("Pattern", "")},
-                      cwd, session, event, name)
-    if name.startswith("browser_") and args.get("Url"):
-        return Action("antigravity", "WebFetch", {"url": args["Url"]}, cwd, session, event, name)
-    if t:
-        return Action("antigravity", t, args, cwd, session, event, name)
-    return Action("antigravity", _mcp("antigravity", name) if name else "", args, cwd, session, event, name)
-
-
 HERMES_TOOLS = {"search_files": "Grep", "web_search": "WebSearch", "delegate_task": "Task", "memory": "TodoWrite",
                 "todo": "TodoWrite", "clarify": "AskUserQuestion"}
 
@@ -295,14 +258,9 @@ def parse_openclaw(ev: dict) -> Action:
 
 
 def parse(agent: str, ev: dict) -> Action:
-    special = {"cursor": parse_cursor, "cline": parse_cline, "antigravity": parse_antigravity, "hermes": parse_hermes,
-               "openclaw": parse_openclaw}
+    special = {"cursor": parse_cursor, "cline": parse_cline, "hermes": parse_hermes, "openclaw": parse_openclaw}
     if agent in special:
         return special[agent](ev)
-    if agent == "zcode":  # ZCode speaks Claude Code's hook protocol
-        a = parse("claude", ev)
-        a.agent = "zcode"
-        return a
     if agent == "opencode":
         tool_raw = ev.get("tool", "")
         args = dict(ev.get("args") or {})
@@ -347,13 +305,11 @@ def parse(agent: str, ev: dict) -> Action:
 
 def render(agent: str, action: Action, d: Decision | None, context: str | None) -> str:
     """Body the hook client prints to stdout."""
-    special = {"cursor": render_cursor, "cline": render_cline, "antigravity": render_antigravity, "hermes": render_hermes}
+    special = {"cursor": render_cursor, "cline": render_cline, "hermes": render_hermes}
     if agent in special:
         return special[agent](action, d, context)
     if agent == "openclaw":
         agent = "opencode"  # the Senti plugin for OpenClaw uses the same compact {verdict, reason, updatedInput} reply
-    if agent == "zcode":
-        agent = "claude"
     if agent == "opencode" or agent == "generic":
         if d is None:
             return json.dumps({"verdict": "allow", "reason": "", "context": context})
@@ -411,14 +367,6 @@ def render_cline(action: Action, d: Decision | None, context: str | None) -> str
             out["overrideInput"] = d.meta["updated_input"]
         return json.dumps(out)
     return json.dumps({"cancel": True, "errorMessage": voice(d)})
-
-
-def render_antigravity(action: Action, d: Decision | None, context: str | None) -> str:
-    if action.event != "pre_tool":
-        return json.dumps({})
-    assert d is not None
-    out = {"decision": {"allow": "allow", "ask": "ask", "block": "deny"}[d.verdict], "reason": voice(d)}
-    return json.dumps(out)
 
 
 def render_hermes(action: Action, d: Decision | None, context: str | None) -> str:

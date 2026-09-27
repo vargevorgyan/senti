@@ -95,7 +95,7 @@ def cmd_install(a) -> int:
     from .agents import hook_agents
     agents = hook_agents() if a.agent == "all" else [a.agent]
     for ag in agents:
-        if a.project and ag in {"zcode", "hermes", "openclaw"}:
+        if a.project and ag in {"hermes", "openclaw"}:
             print(f"  {ag:11s} skipped: it only reads user-level settings (install without --project)")
             continue
         if ag == "claude" and a.sandbox:
@@ -123,7 +123,7 @@ def cmd_uninstall(a) -> int:
     from .agents import hook_agents
     agents = hook_agents() if a.agent == "all" else [a.agent]
     for ag in agents:
-        if a.project and ag in {"zcode", "hermes", "openclaw"}:
+        if a.project and ag in {"hermes", "openclaw"}:
             continue
         print(f"  {ag:11s} ✕ {installers.UNINSTALL[ag](a.project)}")
     return 0
@@ -313,8 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_status)
     for name, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
         s = sub.add_parser(name, help=f"{name} hooks for an agent")
-        s.add_argument("agent", choices=["claude", "codex", "opencode", "cursor", "cline", "antigravity", "zcode", "hermes",
-                                          "openclaw", "all"])
+        s.add_argument("agent", choices=["claude", "codex", "opencode", "cursor", "cline", "hermes", "openclaw", "all"])
         s.add_argument("--project", help="install into a project instead of user-wide")
         if name == "install":
             s.add_argument("--rebuild", action="store_true", help="recompile the hook client")

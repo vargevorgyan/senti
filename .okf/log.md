@@ -1,7 +1,8 @@
 # Update Log
 
 ## 2026-09-27
-* **Creation**: Integrations for [Cursor](/integrations/cursor.md), [Cline](/integrations/cline.md), [Antigravity](/integrations/antigravity.md), [ZCode](/integrations/zcode.md), [Hermes Agent](/integrations/hermes.md), [OpenClaw](/integrations/openclaw.md) — adapters, installers, fail-closed replies, unit tests; not yet live-tested. Agent registry `engine/src/senti/agents.py`.
+* **Decision**: ZCode and Antigravity support dropped by the repo owner (ZCode hooks don't fire for its native agent; Antigravity passes no task text and would only be testable on the owner's Google account).
+* **Creation**: Integrations for [Cursor](/integrations/cursor.md), [Cline](/integrations/cline.md), [Hermes Agent](/integrations/hermes.md), [OpenClaw](/integrations/openclaw.md) — adapters, installers, fail-closed replies, unit tests; not yet live-tested. Agent registry `engine/src/senti/agents.py`.
 * **Update**: Review leftovers closed — git exec keys/globals, Grep content over secrets, demo code off by default, signed judge/approval answers — [Security review](/research/security-review-2026-09-27.md).
 * **Creation**: [Use cases](/use-cases/) section — 12 use cases for individual developers, organizations and security teams, each with actor, flow, features, verification status and limits.
 * **Creation**: [Secret brokering](/architecture/secret-brokering.md), [Local model gateway](/architecture/model-gateway.md).

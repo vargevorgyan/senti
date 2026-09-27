@@ -247,65 +247,6 @@ def uninstall_cline(project: str | None = None) -> Path:
     return d
 
 
-# Antigravity: ~/.gemini/config/hooks.json (global, IDE + agy CLI) or <project>/.agents/hooks.json; one named hook "senti"
-def antigravity_hooks_path(project: str | None) -> Path:
-    return Path(project) / ".agents" / "hooks.json" if project else HOME / ".gemini" / "config" / "hooks.json"
-
-
-def install_antigravity(project: str | None = None) -> Path:
-    p = antigravity_hooks_path(project)
-    cfg = _load_json(p)
-    cfg["senti"] = {
-        "enabled": True,
-        "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": _cmd("antigravity", "pre"), "timeout": 600}]}],
-        "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": _cmd("antigravity", "post"), "timeout": 30}]}],
-    }
-    _write_json(p, cfg)
-    return p
-
-
-def uninstall_antigravity(project: str | None = None) -> Path:
-    p = antigravity_hooks_path(project)
-    if p.exists():
-        cfg = _load_json(p)
-        cfg.pop("senti", None)
-        _write_json(p, cfg)
-    return p
-
-
-# ZCode: ~/.zcode/cli/config.json, nested hooks.events layout (project-level hooks are ignored by ZCode)
-def zcode_config_path() -> Path:
-    return HOME / ".zcode" / "cli" / "config.json"
-
-
-def install_zcode(project: str | None = None) -> Path:
-    _no_project("ZCode", project)
-    p = zcode_config_path()
-    cfg = _load_json(p)
-    hooks = cfg.setdefault("hooks", {})
-    hooks["enabled"] = True
-    events = hooks.setdefault("events", {})
-    for ev, kind, matcher in (("PreToolUse", "pre", "*"), ("UserPromptSubmit", "prompt", ""), ("PostToolUse", "post", "*")):
-        entry = {"matcher": matcher, "hooks": [{"type": "command", "command": str(hook_binary()), "args": ["zcode", kind],
-                                                "timeoutMs": 600000 if kind == "pre" else 30000}]}
-        events[ev] = [entry] + [e for e in events.get(ev, []) if not any(MARK in h.get("command", "") for h in e.get("hooks", []))]
-    _write_json(p, cfg)
-    return p
-
-
-def uninstall_zcode(project: str | None = None) -> Path:
-    p = zcode_config_path()
-    if p.exists():
-        cfg = _load_json(p)
-        events = (cfg.get("hooks") or {}).get("events") or {}
-        for ev in list(events):
-            events[ev] = [e for e in events[ev] if not any(MARK in h.get("command", "") for h in e.get("hooks", []))]
-            if not events[ev]:
-                del events[ev]
-        _write_json(p, cfg)
-    return p
-
-
 # Hermes Agent: shell hooks in ~/.hermes/config.yaml (fail_closed), consent pre-seeded in shell-hooks-allowlist.json
 def hermes_home() -> Path:
     return Path(os.environ.get("HERMES_HOME") or HOME / ".hermes")
@@ -393,10 +334,8 @@ def uninstall_openclaw(project: str | None = None) -> Path:
     return d
 
 
-INSTALL.update({"cursor": install_cursor, "cline": install_cline, "antigravity": install_antigravity, "zcode": install_zcode,
-                "hermes": install_hermes, "openclaw": install_openclaw})
-UNINSTALL.update({"cursor": uninstall_cursor, "cline": uninstall_cline, "antigravity": uninstall_antigravity,
-                  "zcode": uninstall_zcode, "hermes": uninstall_hermes, "openclaw": uninstall_openclaw})
+INSTALL.update({"cursor": install_cursor, "cline": install_cline, "hermes": install_hermes, "openclaw": install_openclaw})
+UNINSTALL.update({"cursor": uninstall_cursor, "cline": uninstall_cline, "hermes": uninstall_hermes, "openclaw": uninstall_openclaw})
 
 
 LAUNCH_AGENT = Path.home() / "Library" / "LaunchAgents" / "am.tumo.senti.plist"

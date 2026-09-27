@@ -1,7 +1,7 @@
 // senti-hook: the tiny program an agent runs for every action.
 //
 //   senti-hook <agent> [pre|prompt|post]
-//   agent = claude | codex | opencode | cursor | cline | antigravity | zcode | hermes | openclaw | generic
+//   agent = claude | codex | opencode | cursor | cline | hermes | openclaw | generic
 //
 // Reads the agent's hook JSON from stdin, sends it to the local Senti engine over a Unix socket
 // (HTTP/1.1, POST /v1/hook/<agent>), and prints the engine's reply for the agent.
@@ -50,7 +50,7 @@ func failClosed(_ why: String) -> Never {
         switch agent {
         case "cursor": print(event == "prompt" ? "{\"continue\":true}" : "{}")
         case "cline": print("{\"cancel\":false}")
-        case "hermes", "antigravity": print("{}")
+        case "hermes": print("{}")
         default: break
         }
         exit(0)
@@ -67,12 +67,6 @@ func failClosed(_ why: String) -> Never {
         print("{\"cancel\":true,\"errorMessage\":\"\(reason)\"}")
     case "hermes":
         print("{\"decision\":\"block\",\"reason\":\"\(reason)\"}")
-        exit(2)
-    case "antigravity":
-        print("{\"decision\":\"deny\",\"reason\":\"\(reason)\"}")
-    case "zcode":
-        // ZCode fails open on hook errors: an explicit deny (not ask) plus exit 2
-        print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"\(reason)\"}}")
         exit(2)
     default:
         print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"\(reason)\"}}")

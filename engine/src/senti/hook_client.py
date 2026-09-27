@@ -20,7 +20,7 @@ def main() -> None:
 
     def fail(why: str):
         if event != "pre":
-            fallback = {"cursor": {"continue": True} if event == "prompt" else {}, "cline": {"cancel": False}, "hermes": {}, "antigravity": {}}
+            fallback = {"cursor": {"continue": True} if event == "prompt" else {}, "cline": {"cancel": False}, "hermes": {}}
             if agent in fallback:
                 print(json.dumps(fallback[agent]))
             sys.exit(0)
@@ -34,12 +34,9 @@ def main() -> None:
             out = {"cancel": True, "errorMessage": reason}
         elif agent == "hermes":
             out, code = {"decision": "block", "reason": reason}, 2
-        elif agent == "antigravity":
-            out = {"decision": "deny", "reason": reason}
         else:
-            perm = "deny" if agent in {"codex", "zcode"} else "ask"
+            perm = "deny" if agent == "codex" else "ask"
             out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": perm, "permissionDecisionReason": reason}}
-            code = 2 if agent == "zcode" else 0
         print(json.dumps(out))
         sys.exit(code)
 
