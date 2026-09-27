@@ -45,7 +45,10 @@ PERSISTENCE_PATTERNS = [r"/Library/LaunchAgents/", r"/Library/LaunchDaemons/", r
                         r"/\.bashrc$", r"/\.bash_profile$", r"/\.profile$", r"/\.git/hooks/", r"/\.git/config$", r"^/etc/",
                         r"(^|/)\.envrc$", r"/\.vscode/(tasks|settings|launch)\.json$", r"(^|/)\.mcp\.json$",
                         r"/\.claude/(commands|agents|hooks|skills)/", r"/\.cursor/(rules|mcp\.json)", r"/\.idea/workspace\.xml$",
-                        r"/\.gitmodules$", r"/\.gitattributes$"]
+                        r"/\.gitmodules$", r"/\.gitattributes$",
+                        # instruction files agents obey (Rules File Backdoor)
+                        r"(^|/)\.cursorrules$", r"(^|/)\.windsurfrules$", r"(^|/)\.clinerules(/|$)", r"(^|/)\.github/copilot-instructions\.md$",
+                        r"(^|/)CLAUDE(\.local)?\.md$", r"(^|/)AGENTS\.md$", r"(^|/)GEMINI\.md$", r"/\.cursor/rules/", r"/\.github/instructions/"]
 RUN_LATER_PATTERNS = [r"(^|/)package\.json$", r"(^|/)Makefile$", r"(^|/)\.github/workflows/", r"(^|/)\.gitlab-ci\.yml$",
                       r"(^|/)\.husky/", r"(^|/)setup\.py$", r"(^|/)pyproject\.toml$"]
 PERSONAL_DIRS = ["Documents", "Desktop", "Pictures", "Movies", "Music", "Downloads", "Library", "Public"]
@@ -206,8 +209,26 @@ SCRIPT_OBFUSCATION = re.compile(r"(exec|eval)\s*\(\s*(base64|codecs|bytes\.fromh
                                 r"__import__\(['\"](base64|zlib|marshal)|Function\(\s*atob|eval\(\s*atob")
 
 
+HIDDEN_UNICODE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069]|[\U000E0000-\U000E007F]")
+
+
+def _home_var_wipe(text: str) -> bool:
+    """`X="$HOME"` somewhere plus `rm -rf "$X"` (e.g. in a cleanup trap) deletes the home folder."""
+    home_vars = set(re.findall(r"\b([A-Za-z_]\w*)=[\"']?(?:\$HOME|\$\{HOME\}|~)/?[\"']?(?:\s|;|$)", text))
+    for v in home_vars:
+        if re.search(rf"rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-\w+\s+)*[\"']?\$\{{?{v}\}}?[\"']?(\s|$|[;&|')])", text):
+            return True
+    return False
+
+
 def scan_code(text: str) -> Decision | None:
     """Detectors over script content. Returns a block/ask decision or None."""
+    if _home_var_wipe(text):
+        return Decision("block", "The script deletes your home folder through a variable set to $HOME", "L2-detectors",
+                        "script_wipe_home", severity="critical")
+    if len(HIDDEN_UNICODE.findall(text)) >= 3:
+        return Decision("block", "The script hides text with invisible Unicode characters (a known way to smuggle instructions)",
+                        "L2-detectors", "hidden_unicode", severity="critical")
     sens, net = SCRIPT_SENSITIVE.search(text), SCRIPT_NET.search(text)
     if sens and net:
         return Decision("block", "The script reads secret files and sends data to the internet", "L2-detectors",
@@ -389,9 +410,32 @@ HARD_DENY_CMD = [
     (r"rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*[\"']?(/|/\*|~|~/|~/\*|\$HOME/?|\$HOME/\*|/Users/?|/System|/Applications)[\"']?(\s|$|[;&|)])", "Deletes your whole disk or home folder"),
     (r"(?i)\b(killall|pkill)\b[^;&|]*senti|\blaunchctl\s+(unload|bootout|remove|disable|stop)[^;&|]*senti|kill\s+[^;&|]*\$\(.*senti", "Tries to switch off Senti"),
     (r"history\s+-c|rm\s+[^;&|]*\.(bash|zsh)_history", "Erases your shell history (covering tracks)"),
+    (r"(^|[;&|(\s/])(claude|gemini|q|codex|cursor-agent|opencode|aider|goose|amp|qwen|crush|kiro|kimi)\b[^;&|]*"
+     r"(--dangerously-skip-permissions|--yolo\b|--trust-all-tools|--dangerously-bypass-approvals-and-sandbox|--approve-for-me|"
+     r"--permission-mode[ =]bypassPermissions|--allow-dangerously-skip-permissions)",
+     "Starts another AI agent with its safety checks switched off (a malware technique seen in the Nx attack)"),
+    (r"rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*[\"']?/Volumes/[^/\s\"']+/?[\"']?(\s|$|[;&|)])", "Deletes a whole disk or volume"),
     (r"(^|[;&|(\s/])senti\s+(stop|uninstall|unenroll|enroll|install|service\s+uninstall|honeytoken\s+remove|undo\s+restore|secret)\b",
      "Tries to switch off or reconfigure Senti"),
     (r"osascript[^;&|]*(keystroke|password|System Events)[^;&|]*(password|keystroke)", "Tries to type into other apps or phish for your password"),
+]
+
+
+DESTRUCTIVE_INFRA = [
+    (r"\bterraform\s+(destroy|apply\b[^;&|]*-destroy)|\bpulumi\s+(destroy|down)|\bcdk\s+destroy|\bserverless\s+remove",
+     "Destroys cloud infrastructure (terraform/pulumi/cdk destroy)"),
+    (r"\baws\s+[\w-]+\s+(delete-|terminate-|remove-|deregister-|rb\b|rm\b[^;&|]*--recursive|purge-)", "Deletes cloud resources in AWS"),
+    (r"\bgcloud\b[^;&|]*\s(delete|remove)\b|\bgsutil\s+(rm|rb)\b|\baz\b[^;&|]*\sdelete\b", "Deletes cloud resources (Google Cloud / Azure)"),
+    (r"\bkubectl\s+delete\b|\bhelm\s+(uninstall|delete)\b", "Deletes Kubernetes resources"),
+    (r"(?i)\bdrop\s+(table|database|schema)\b|\btruncate\s+table\b|\bdropdb\b|\bmongo\w*\b[^;&|]*dropDatabase",
+     "Deletes a database or table"),
+    (r"drizzle-kit\s+push\b[^;&|]*--force|prisma\s+(db\s+push\b[^;&|]*(--force-reset|--accept-data-loss)|migrate\s+reset)|"
+     r"\brails\s+db:(drop|reset|schema:load)|manage\.py\s+flush|\bsequelize\s+db:drop|\bknex\s+migrate:rollback\s+--all",
+     "Pushes a schema change that can wipe database data"),
+    (r"\b(railway\s+(down|delete)|fly\s+(apps\s+destroy|destroy)|heroku\s+apps:destroy|vercel\s+(remove|rm)\b|netlify\s+sites:delete|"
+     r"supabase\s+db\s+reset|firebase\s+[\w:]*delete)", "Deletes a hosted app or database"),
+    (r"(?i)curl\b[^;&|]*(-X\s*DELETE|--request\s+DELETE)|curl\b[^;&|]*mutation[^;&|]*(delete|destroy|drop|remove)\w*\s*\(",
+     "Sends a delete request to a live service"),
 ]
 
 
@@ -406,6 +450,9 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
     for pat, why in HARD_DENY_CMD:
         if re.search(pat, cmd):
             return Decision("block", why, "L1-rules", "hard_deny", severity="critical"), facts
+    for pat, why in DESTRUCTIVE_INFRA:
+        if re.search(pat, cmd):
+            facts["destroys_infra"] = why
     all_safe = True
     if depth < 3:
         for hidden in decode_hidden(cmd):
@@ -494,6 +541,10 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 facts["net"] = True
             all_safe = False
             continue
+        if prog in {"ssh"}:
+            pos = [a for a in args if not a.startswith("-")]
+            if len(pos) >= 2:  # `ssh host command …` runs a command on another machine
+                facts["remote_command"] = " ".join(pos[1:])[:80]
         if prog in NET_TOOLS:
             hosts, values = net_hosts(prog, args)
             for v in values:  # flag values can be files (-d @file, -F f=@file, -T file, --unix-socket path)
@@ -523,6 +574,17 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 if t in {"/", HOME} or personal:
                     return Decision("block", f"Deletes your personal files ({short(t)})", "L1-rules", "rm_personal",
                                     severity="critical"), facts
+                if inside(project, t) and os.path.normpath(t) != os.path.normpath(project):
+                    return Decision("block", f"Deletes the folder that contains your project ({short(t)})", "L1-rules",
+                                    "rm_project_parent", severity="critical"), facts
+                if os.path.normpath(t) == os.path.normpath(project):
+                    facts["deletes_project"] = True
+                recursive = any(re.match(r"^-[a-zA-Z]*[rR]", a) or a == "--recursive" for a in args)
+                if recursive and not t.startswith(("/tmp/", "/private/tmp/")) and not real_inside(t, project):
+                    facts["rm_outside"] = t
+                elif recursive and real_inside(t, project) and os.path.basename(t.rstrip("/")) not in BUILD_ARTIFACTS \
+                        and (os.path.isdir(t) or t.endswith("/")) and os.path.normpath(t) != os.path.normpath(project):
+                    facts["rm_project_dirs"] = facts.get("rm_project_dirs", []) + [os.path.relpath(t, project)]
                 if classify_path(t) == "sensitive":
                     return Decision("block", f"Deletes your keys or credentials ({short(t)})", "L1-rules", "rm_sensitive",
                                     severity="critical"), facts
@@ -645,6 +707,8 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
             facts["writes"].append(dest)
             if classify_path(dest) in {"persistence", "guard"} or not real_inside(dest, project) and not dest.startswith(("/tmp", "/private/tmp")):
                 all_safe = False
+                if not real_inside(dest, project) and not dest.startswith(("/tmp", "/private/tmp")) and paths[:-1]:
+                    facts["moves_outside"] = short(dest)
             if prog == "mv":
                 facts["deletes"] += paths[:-1]
         if prog in {"npm", "pnpm", "yarn", "bun", "make"} and depth < 3:
@@ -655,6 +719,8 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 if d and d.verdict == "block":
                     return Decision("block", f"`{prog} {' '.join(args)}` runs `{rc[:80]}`: " + d.reason[0].lower() + d.reason[1:],
                                     "L2-detectors", "resolved_" + d.rule, severity="critical"), facts
+                if d and d.verdict == "ask" and not facts.get("resolved_ask"):
+                    facts["resolved_ask"] = f"`{prog} {' '.join(args)}` runs `{rc[:80]}`: " + d.reason[0].lower() + d.reason[1:]
                 if d is None or d.verdict != "allow":
                     all_safe = False
                 merge(f)
@@ -667,7 +733,8 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 all_safe = False
             recursive = (prog == "grep" and any(re.match(r"^-[a-zA-Z]*[rR]", a) or a in {"--recursive", "--dereference-recursive"} for a in args)) \
                 or (prog == "rg" and any(a in {"--hidden", "-.", "--no-ignore", "-u", "-uu", "-uuu"} for a in args))
-            if recursive and project_has_secrets(project):
+            search_dirs = [p for p in paths if os.path.isdir(p)] or [cwd]
+            if recursive and any(project_has_secrets(d_) for d_ in search_dirs):
                 facts["may_read_secrets"] = True
                 all_safe = False
             if risky_paths:
@@ -725,7 +792,11 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 all_safe = False
                 facts["unknown"].append(f"git {sub}")
                 continue
-            if sub in {"reset", "clean", "checkout", "restore"} and any(a in {"--hard", "-f", "-fd", "-fdx", "-xdf", ".", "--"} for a in rest):
+            discards = (sub == "reset" and "--hard" in rest) or (sub == "clean" and any(re.match(r"^-\w*f", a) for a in rest)) \
+                or (sub == "restore" and "--staged" not in rest and any(not a.startswith("-") for a in rest)) \
+                or (sub == "checkout" and ("--" in rest or "." in rest)) or (sub == "stash" and rest[:1] in (["drop"], ["clear"])) \
+                or (sub == "branch" and any(a in {"-D", "--delete", "-d"} for a in rest))
+            if discards:
                 facts["destructive_git"] = True
                 all_safe = False
                 continue
@@ -748,6 +819,25 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
         all_safe = False
     if facts["net"] and facts["reads_sensitive"]:
         return Decision("block", "Sends a secret or private file to the internet", "L1-rules", "taint_net", severity="critical"), facts
+    if facts.get("may_read_secrets"):
+        return Decision("ask", "Searches through a folder that contains secret files (.env, keys), so it could print their values",
+                        "L1-rules", "search_secrets", severity="warning"), facts
+    if facts.get("rm_outside"):
+        return Decision("ask", f"Deletes a folder outside the project ({short(facts['rm_outside'])})", "L1-rules", "rm_outside_project",
+                        severity="warning"), facts
+    if facts.get("rm_project_dirs"):
+        return Decision("ask", f"Deletes whole folders of your project ({', '.join(facts['rm_project_dirs'][:4])}); "
+                               "I keep a snapshot if you allow it", "L1-rules", "rm_project_dirs", severity="warning"), facts
+    if facts.get("moves_outside"):
+        return Decision("ask", f"Moves or copies project files out of the project (to {facts['moves_outside']})", "L1-rules",
+                        "moves_outside", severity="warning"), facts
+    if facts.get("remote_command"):
+        return Decision("ask", f"Runs a command on another computer over SSH ({facts['remote_command']})", "L1-rules",
+                        "remote_command", severity="warning"), facts
+    if facts.get("resolved_ask"):
+        return Decision("ask", facts["resolved_ask"], "L2-detectors", "resolved_ask", severity="warning"), facts
+    if facts.get("destroys_infra"):
+        return Decision("ask", facts["destroys_infra"] + " — this can't be undone", "L1-rules", "destructive_infra", severity="critical"), facts
     if facts.get("exec_env"):
         return Decision("ask", f"Sets {', '.join(facts['exec_env'])}, which makes programs run other code", "L1-rules", "exec_env",
                         severity="warning"), facts
@@ -757,6 +847,9 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
     if facts.get("git_exec_config"):
         return Decision("ask", "Changes a git setting that makes git run a program later (a common way to hide a backdoor)", "L1-rules",
                         "git_exec_config", severity="warning"), facts
+    if facts.get("destructive_git"):
+        return Decision("ask", "Throws away uncommitted work or git history (reset --hard, restore, clean, branch -D); "
+                               "I keep a snapshot if you allow it", "L1-rules", "destructive_git", severity="warning"), facts
     if facts.get("force_push"):
         return Decision("ask", "Force-pushes to git, which can erase other people's work", "L1-rules", "force_push",
                         severity="warning"), facts
@@ -888,8 +981,24 @@ def host_matches(host: str, patterns) -> bool:
     return False
 
 
+SECRET_TABLE_SQL = re.compile(r"(?i)\b(select|copy|dump|export)\b[^;]*\bfrom\s+[\"`\w.]*(token|secret|credential|password|api_?key|session|auth)\w*")
+WRITE_SQL = re.compile(r"(?i)\b(insert|update|delete|drop|alter|truncate|grant)\b")
+
+
 def check_action(tool: str, inp: dict, cwd: str, project: str) -> tuple[Decision | None, dict]:
     facts: dict = {"scripts": [], "paths": [], "hosts": []}
+    if tool.startswith("mcp__"):
+        blob = json.dumps(inp, default=str)
+        for pat, why in DESTRUCTIVE_INFRA:
+            if re.search(pat, blob):
+                return Decision("ask", why + " — this can't be undone", "L1-rules", "destructive_infra", severity="critical"), facts
+        if SECRET_TABLE_SQL.search(blob):
+            return Decision("ask", "Reads a database table that holds tokens, passwords or secrets", "L1-rules", "secret_table",
+                            severity="warning"), facts
+        if WRITE_SQL.search(blob) and re.search(r"(?i)\b(sql|query)\b", tool + " " + " ".join(map(str, inp))):
+            facts["writes_data"] = True
+        if re.search(r"(?i)(create|update|delete|push|merge|send|post|publish|upload|comment|write|insert|remove)", tool.split("__")[-1]):
+            facts["writes_data"] = True
     if tool == "Bash":
         return check_bash(inp.get("command", "") or "", cwd, project)
     if tool in {"Read", "Grep", "Glob", "LS", "NotebookRead"}:

@@ -24,6 +24,7 @@ sources:
 | `docker-compose.yml` | backend + admin + Ollama "corporate model" | Docker |
 | `scripts/e2e_modes.py` | End-to-end check of all judge modes, push, overrides, approvals, audit upload | host |
 | `demo/make-demo-repo.sh` | Poisoned demo repo (fake secrets, `*.invalid` targets) | host |
+| `scripts/incident_replay.py`, `research/incidents/` | Real incidents replayed through the engine (decisions only, nothing executed) | host |
 | `prototype/` | Original ideathon prototype and benchmarks (reference only) | — |
 
 # Engine modules (`engine/src/senti/`)
@@ -62,7 +63,7 @@ uv run senti install all               # or --project DIR for one repo
 # Tests
 
 ```bash
-cd engine && uv run pytest -q          # 196 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
+cd engine && uv run pytest -q          # 230 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
 cd backend && uv run pytest -q         # 24 API tests
 cd admin && npx playwright test        # 7 browser tests against the running stack
 SENTI_SOCKET=... uv run --project engine python scripts/e2e_modes.py   # 14 live checks

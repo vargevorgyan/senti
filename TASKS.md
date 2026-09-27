@@ -52,6 +52,11 @@ Legend: [x] done · [~] partial · [ ] todo
 - [ ] Live tests with the real agents (none of the four is installed on the dev Mac)
 - [ ] Enforce peer verification for these agents once their process names are confirmed live
 
+### Evidence: real incidents (2026-09-27)
+- [x] 19 sourced incidents → `research/incidents/incidents.json`; `scripts/incident_replay.py`; `engine/tests/test_incidents.py` (38/38 by rules)
+- [x] ~15 rules added from the misses; KB: `.okf/research/agent-incidents.md` (presentation-ready)
+- [ ] Refresh the incident list quarterly; add live re-enactments (safe copies) for the four headline stories
+
 ### Org backend (Docker) — `backend/`
 - [x] FastAPI + SQLite models: admins, roles, users, profiles, devices, enrollment codes, events, approvals, KV, change log
 - [x] Admin auth (JWT, random secret per install), seed admin + Developer / PM / Autonomous agent profiles + demo code
@@ -113,3 +118,4 @@ cd admin && npx playwright test
 - 2026-09-27: Review leftovers fixed (see security review, third pass). Engine 175 tests, backend 24, Playwright 7, e2e 14/14.
 - 2026-09-27: Six more agents (Cursor, Cline, Antigravity, ZCode, Hermes, OpenClaw): adapters, installers, docs; unit-tested, not live-tested. Engine 196 tests.
 - 2026-09-27: ZCode and Antigravity support removed at the owner's request.
+- 2026-09-27: Incident research: 19 real agent incidents replayed, 38/38 harmful actions caught by rules; new rules added; simulation unchanged (22/22, 2/39 safe asked).

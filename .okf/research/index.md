@@ -8,3 +8,4 @@
 * [Related repositories and links](related-repos.md) - Links to every external project referenced during Senti's planning, grouped by how they relate to Senti.
 * [Real-agent tests of the full build](real-agent-tests.md) - Live sessions of Claude Code, Codex CLI and OpenCode against the poisoned demo repo through the full-build engine, plus the automated judge-mode end-to-end run.
 * [Security review of the full build](security-review-2026-09-27.md) - Read-only adversarial review of the engine, rules, profiles and backend; 20 findings, the fixes applied and what remains open.
+* [Real AI-agent incidents replayed through Senti](agent-incidents.md) - 19 publicly documented incidents (2025–2026) where coding agents deleted home folders, wiped production, leaked secrets or obeyed injected text; every harmful action replayed through Senti — 38/38 stopped or flagged by rules alone.

@@ -251,6 +251,14 @@ class Engine:
             return combined
 
         # a session that read prompt-injected content gets no silent network access
+        if self.tainted.get(a.session_id) and a.tool.startswith("mcp__") and not facts.get("writes_data"):
+            return Decision("ask", "Earlier this session the agent read text that tried to give it orders "
+                                   f"({self.tainted[a.session_id][0]}); I check every tool call it makes after that ({a.tool})",
+                            "L2-detectors", "tainted_session_tool", severity="warning")
+        if self.tainted.get(a.session_id) and facts.get("writes_data"):
+            return Decision("ask", "Earlier this session the agent read text that tried to give it orders "
+                                   f"({self.tainted[a.session_id][0]}); now it wants to write or send data through {a.tool}",
+                            "L2-detectors", "tainted_session_write", severity="warning")
         if self.tainted.get(a.session_id) and (facts.get("net") or facts.get("hosts")) and not (
                 combined and combined.verdict == "block"):
             return Decision("ask", "Earlier this session the agent read text that tried to give it orders "
@@ -515,7 +523,7 @@ class Engine:
             _, facts = check_action("Bash", a.input, a.cwd, project_root(a.cwd))
             targets += facts.get("deletes", [])
             targets += [w for w in facts.get("writes", []) if os.path.exists(w)]
-            if re.search(r"\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+(--\s+)?\.)", cmd):
+            if re.search(r"\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+(--\s+)?\.|restore\s+(?!--staged))", cmd):
                 try:
                     import subprocess
                     root = project_root(a.cwd)

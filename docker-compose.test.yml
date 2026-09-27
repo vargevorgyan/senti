@@ -1,0 +1,32 @@
+# Test suites in throw-away containers (nothing runs on the host):
+#   docker compose -f docker-compose.test.yml run --rm engine-tests
+#   docker compose -f docker-compose.test.yml run --rm backend-tests
+#   docker compose -f docker-compose.test.yml run --rm incident-replay
+name: senti-tests
+
+services:
+  engine-tests:
+    build: {context: ., dockerfile: engine/Dockerfile.test}
+    volumes:
+      - ./engine:/src/engine:ro
+      - ./research:/repo/research:ro
+    # work on a private copy of the source so nothing is written back to the host checkout
+    command: ["sh", "-c", "cp -r /src/engine/src /src/engine/tests /src/engine/hook /repo/engine/ 2>/dev/null; cp /src/engine/README.md /repo/engine/ 2>/dev/null; uv sync --frozen -q && uv run --no-sync pytest -q -p no:cacheprovider ${PYTEST_ARGS:-}"]
+    network_mode: none
+
+  incident-replay:
+    build: {context: ., dockerfile: engine/Dockerfile.test}
+    volumes:
+      - ./engine:/src/engine:ro
+      - ./research:/repo/research:ro
+      - ./scripts:/repo/scripts:ro
+    command: ["sh", "-c", "cp -r /src/engine/src /repo/engine/; cp /src/engine/README.md /repo/engine/ 2>/dev/null; uv sync --frozen -q && uv run --no-sync python /repo/scripts/incident_replay.py"]
+    network_mode: none
+
+  backend-tests:
+    build: {context: ./backend, dockerfile: Dockerfile.test}
+    volumes:
+      - ./backend/app:/src/app:ro
+      - ./backend/tests:/src/tests:ro
+    command: ["sh", "-c", "cp -r /src/app /src/tests /app/ && uv run --no-sync pytest -q -p no:cacheprovider"]
+    network_mode: none

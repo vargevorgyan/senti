@@ -11,7 +11,16 @@ PATTERNS = [
     (r"(?i)(do not|don't|never)\s+(tell|inform|mention to|show)\s+(the\s+)?(user|human)", "tells the agent to hide things from you"),
     (r"(?i)you\s+are\s+now\s+(in\s+)?(developer|dan|jailbreak|god)\s*mode", "tries to jailbreak the agent"),
     (r"(?i)(system|admin)\s*(prompt|override|message)\s*:", "pretends to be a system message"),
-    (r"[​‌‍⁠﻿]{3,}|[\U000E0000-\U000E007F]{3,}", "contains invisible characters that can hide instructions"),
+    (r"(?:[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069][^\n]{0,40}){3,}|[\U000E0000-\U000E007F]{3,}",
+     "contains invisible characters that can hide instructions"),
+    (r"(?i)(important\W{0,10})?instructions?\s+for\s+(the\s+)?(cursor|claude|copilot|codex|gemini|chatgpt|ai|assistant|agent|bot|llm)",
+     "contains instructions addressed to an AI assistant"),
+    (r"(?i)(this|the\s+following)\s+message\s+is\s+(directed\s+at|for|meant\s+for)\s+(you|claude|the\s+(ai|assistant|agent|bot))",
+     "contains a message addressed to the AI agent"),
+    (r"(?i)(does\s*n[o']t\s+care\s+about\s+privacy|put\s+everything\s+you\s+find|read\s+the\s+\w*\s*files?\s+of\s+all)",
+     "asks the agent to collect and publish private information"),
+    (r"(?i)please\s+do\s+(these|the\s+following)\s+actions|you\s+should\s+read\s+the\s+[`'\"]?\w+[`'\"]?\s+table",
+     "tells the agent to take actions it wasn't asked to"),
 ]
 
 

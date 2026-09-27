@@ -212,3 +212,10 @@ async def test_allowlist_key_includes_cwd(project):
     a1 = Action("claude", "Bash", {"command": "make x"}, project, "s")
     a2 = Action("claude", "Bash", {"command": "make x"}, os.path.join(project, "sub"), "s")
     assert e.action_key(a1, project) != e.action_key(a2, project)
+
+
+def test_scoped_recursive_grep_is_fine(project):
+    open(os.path.join(project, ".env"), "w").write("K=1")
+    os.makedirs(os.path.join(project, "src"), exist_ok=True)
+    assert verdict("grep -rn TODO src", project)[0] == "allow"
+    assert verdict("grep -rn KEY .", project)[0] != "allow"

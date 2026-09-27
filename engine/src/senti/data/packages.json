@@ -335,7 +335,8 @@
    "fallguys",
    "getcookies",
    "flatmap-stream",
-   "peacenotwar"
+   "peacenotwar",
+   "unused-imports"
   ],
   "pypi": [
    "colourama",
@@ -371,5 +372,18 @@
    "matplotlli"
   ]
  },
- "note": "Offline list; seeded from public advisories and typosquat reports. Extend via the org backend."
+ "note": "Offline list; seeded from public advisories and typosquat reports. Extend via the org backend.",
+ "hallucinated": {
+  "npm": [
+   "react-codeshift",
+   "react-codemods",
+   "eslint-plugin-react-typescript",
+   "unused-imports-plugin"
+  ],
+  "pypi": [
+   "huggingface-cli",
+   "pytorch-utils",
+   "flask-restapi"
+  ]
+ }
 }

@@ -60,6 +60,9 @@ def check_package(manager: str, raw: str) -> Decision | None:
     if name in d.get("malicious", {}).get(eco, []):
         return Decision("block", f"Installs '{name}', a package known to be malicious", "L2-supply-chain", "malicious_package",
                         severity="critical")
+    if name in d.get("hallucinated", {}).get(eco, []):
+        return Decision("ask", f"Installs '{name}', a package name AI models are known to invent (slopsquatting target)",
+                        "L2-supply-chain", "hallucinated_package", severity="warning")
     popular = d.get("popular", {}).get(eco, [])
     if name in popular or not name:
         return Decision("allow", f"Installs a well-known package ({name})", "L2-supply-chain", "popular_package")
