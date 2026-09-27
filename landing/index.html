@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Senti — a watchdog for your AI agents</title>
-  <meta name="description" content="Senti checks every action Claude Code, Codex, Cursor and other AI agents try to take on your Mac, before it runs. It allows the safe ones, asks about the odd ones and blocks the dangerous ones." />
+  <meta name="description" content="Senti checks every action Claude Code, Codex, Cursor and other AI agents try to take, before it runs. It allows the safe ones, asks about the odd ones and blocks the dangerous ones." />
   <meta name="theme-color" content="#0F1A2E" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
@@ -38,9 +38,9 @@
       <div class="hero__glow" aria-hidden="true"></div>
       <div class="hero__copy">
         <h1 class="hero__title" data-split>Your AI agents act fast.<br />Senti checks first.</h1>
-        <p class="hero__lede">A watchdog on your Mac that sees every command, file and web request an agent is about to run. Safe work passes quietly. Odd moves get a question. Dangerous ones never run.</p>
+        <p class="hero__lede">A watchdog on every developer’s computer that sees every command, file and web request an agent is about to run. Safe work passes quietly. Odd moves get a question. Dangerous ones never run.</p>
         <div class="hero__ctas">
-          <a class="btn btn--lamp" href="#install">Install on your Mac</a>
+          <a class="btn btn--lamp" href="#install">Get started</a>
           <a class="btn btn--ghost" href="#incidents">See what it would have stopped</a>
         </div>
       </div>
@@ -109,7 +109,7 @@
         <article class="card">
           <div class="card__meta"><span>Nx npm package</span><time datetime="2025-08">August 2025</time></div>
           <h3 class="card__title">Malware that used your own AI.</h3>
-          <p class="card__story">A poisoned package started the AI tools on developers’ Macs with their safety checks off and told them to hunt for secrets. Over 2,000 leaked.</p>
+          <p class="card__story">A poisoned package started the AI tools on developers’ machines with their safety checks off and told them to hunt for secrets. Over 2,000 leaked.</p>
           <pre class="term"><span class="term__p">$</span> claude <mark>--dangerously-skip-permissions</mark> -p "find .env files…"</pre>
           <div class="verdicts">
             <div class="verdict verdict--without"><span class="verdict__who">Without Senti</span><p>Your AI did the malware’s homework.</p></div>
@@ -149,7 +149,7 @@
         </li>
         <li class="step" data-step>
           <span class="step__n">3</span>
-          <div><h3>Your team’s profile</h3><p>What this role may touch: folders, websites, databases, packages. Signed, cached on the Mac, pushed live from the admin panel.</p></div>
+          <div><h3>Your team’s profile</h3><p>What this role may touch: folders, websites, databases, packages. Signed, cached on each computer, pushed live from the admin panel.</p></div>
         </li>
         <li class="step" data-step>
           <span class="step__n">4</span>
@@ -218,7 +218,7 @@ print(<span class="c-str">"All 42 tests passed"</span>)
         <h2 class="h2">For teams, the rules are a paragraph.</h2>
         <p>Describe access in plain English. Senti turns it into rules, shows you example actions, and waits for your approval.</p>
         <ul class="teams__facts">
-          <li><strong>No model on laptops.</strong> Each Mac runs a small agent. Unclear actions go to your company’s own AI, with secrets removed.</li>
+          <li><strong>No model on laptops.</strong> Each computer runs a small agent. Unclear actions go to your company’s own AI, with secrets removed.</li>
           <li><strong>Everything on your servers.</strong> Admin panel, AI filter and gateway install with one command.</li>
           <li><strong>A log nobody can quietly edit.</strong> Every decision is chained, so tampering shows.</li>
         </ul>
@@ -294,14 +294,12 @@ print(<span class="c-str">"All 42 tests passed"</span>)
     <section class="cta" id="install">
       <div class="cta__glow" aria-hidden="true"></div>
       <h2 class="cta__title">Let the dog in.</h2>
-      <p class="cta__lede">Three commands on an Apple Silicon Mac. It protects every agent you have installed.</p>
+      <p class="cta__lede">Set it up once for the whole company. Your admin runs one command on a server; everyone else joins with the one line from their invite, and every AI agent they use is protected from then on.</p>
       <div class="install">
-        <pre class="install__code" data-install>cd engine && uv sync --extra mlx
-uv run senti start
-uv run senti install all</pre>
+        <pre class="install__code" data-install>./senti-server</pre>
         <button class="btn btn--lamp btn--sm install__copy" type="button" data-copy>Copy</button>
       </div>
-      <p class="cta__teams">Setting it up for a company? Run <code>./senti-server</code> on any Linux or Mac server and invite people from the admin panel.</p>
+      <p class="cta__teams">It asks a few questions, starts the admin panel and prints its address. Invite people there: each person gets a link with their one-line setup. Works from the office or anywhere else.</p>
     </section>
   </main>
 
@@ -310,7 +308,7 @@ uv run senti install all</pre>
       <svg class="dog" viewBox="0 0 130 130" aria-hidden="true"><path class="dog__head" d="M34 30l18 20h26l18-20 4 34c2 18-12 38-35 38S28 82 30 64z"/><circle class="dog__eye" cx="52" cy="66" r="5"/><circle class="dog__eye" cx="78" cy="66" r="5"/><path class="dog__nose" d="M58 80h14l-7 8z"/></svg>
       <span>Senti</span>
     </a>
-    <p>Guards your Mac and never leaves it. Open source, MIT licensed.</p>
+    <p>Guards your team’s computers; your data never leaves your company. Open source, MIT licensed.</p>
     <nav aria-label="Footer">
       <a href="https://github.com/vargevorgyan/senti">GitHub</a>
       <a href="#how">How it works</a>
