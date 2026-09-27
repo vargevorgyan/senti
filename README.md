@@ -13,6 +13,10 @@ Decisions come from fast rules plus a **local LLM** (Qwen3-4B on MLX), so monito
 Organizations add a backend and an admin panel that push role-based profiles to every Mac and can route unclear cases to a
 **corporate model**.
 
+## Business model
+
+This is our business model: [Senti Business Model Canvas](docs/Senti_Business_Model_Canvas.pdf).
+
 ## Architecture
 
 ```
