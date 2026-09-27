@@ -274,3 +274,6 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
 .pickrow input { accent-color: var(--ink); margin: 0; flex: none; }
 .pickrow.covered { color: var(--ink-muted); cursor: default; }
 .pickrow .small { margin-left: auto; }
+/* checkboxes and radios in lists: not the full-width text-input look from the global input rule */
+.pickrow input, .modelrow input { width: auto; height: auto; padding: 0; border: none; background: none; flex: none; }
+.pickrow .mono, .modelrow .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
