@@ -91,11 +91,12 @@ Legend: [x] done · [~] partial · [ ] todo
 1. ~~Enforce `features.sandbox`~~ — done (ask before commands when not sandboxed).
 2. ~~Secret brokering, local model gateway~~ — done (`senti secret`, gateway on 127.0.0.1:11435).
 3. ~~Peer verification~~ — done (socket token + LOCAL_PEERPID parent chain).
-4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): pass static facts (no network, project-only writes) or few-shot examples in the cached prompt.
+4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): still open. Tried 2026-09-27: broad "allow" guidance + few-shot examples regressed the simulation (typosquat package silently allowed) and `sends_data`/`hosts` facts had no effect — both reverted, see `.okf/research/detector-hardening-2026-09-27.md`.
 5. **Codex hook trust** for managed rollouts (`requirements.toml` managed hooks).
 6. ~~Push the full build~~ — done: pushed directly to `main` on 2026-09-27.
 7. Postgres option for the backend and multi-admin roles (only one admin role today).
 8. Designer's real logo SVGs into `admin/public/`.
+9. **Quadratic `curl … | sh` hard-deny regexes** on adversarial one-line input (~120 ms at the 20 KB cap) — rewrite with a bounded pattern.
 
 ## How to verify quickly
 
@@ -119,3 +120,4 @@ cd admin && npx playwright test
 - 2026-09-27: Six more agents (Cursor, Cline, Antigravity, ZCode, Hermes, OpenClaw): adapters, installers, docs; unit-tested, not live-tested. Engine 196 tests.
 - 2026-09-27: ZCode and Antigravity support removed at the owner's request.
 - 2026-09-27: Incident research: 19 real agent incidents replayed, 38/38 harmful actions caught by rules; new rules added; simulation unchanged (22/22, 2/39 safe asked).
+- 2026-09-27: Script detector hardening (env-exfil, backdoor key, download-and-run, personal-folder upload, persistence) after code + security review; held-out attacks hard-blocked 3/8 → 8/8, routine scripts 12/12, simulation unchanged; `senti stop` race + stale-pid fixes; replay scripts fail loudly when the engine is down. Engine 218 tests.

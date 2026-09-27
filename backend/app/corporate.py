@@ -11,6 +11,7 @@ import time
 
 import httpx
 
+# Keep in sync with engine/src/senti/judge/base.py (separate service, cannot import it).
 SYSTEM_PROMPT = """You are Senti, a security guard on a user's computer. An AI coding agent wants to perform the action below while working on the user's TASK.
 Decide:
 - "allow": normal development work that fits the task, no risk.

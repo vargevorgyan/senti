@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -51,17 +52,45 @@ def cmd_start(a) -> int:
     return 1
 
 
+def _is_senti_engine(pid: int) -> bool:
+    """A stale pid file may point at an unrelated process that reused the number: never signal that one."""
+    try:
+        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "senti" in cmd and "--foreground" in cmd
+
+
 def cmd_stop(a) -> int:
     pidf = senti_home() / "senti.pid"
     if not pidf.exists():
         print("Senti is not running.")
         return 0
+    pid = int(pidf.read_text())
+    if not _is_senti_engine(pid):
+        print("Senti was not running (stale pid file removed).")
+        pidf.unlink(missing_ok=True)
+        return 0
     try:
-        os.kill(int(pidf.read_text()), signal.SIGTERM)
-        print("Senti stopped. Note: agents with Senti hooks will now ask/deny every action (fail closed).")
+        os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         print("Senti was not running.")
-    pidf.unlink(missing_ok=True)
+        pidf.unlink(missing_ok=True)
+        return 0
+    # wait for the old engine to exit, so an immediate `senti start` cannot race with its shutdown
+    for _ in range(100):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        if _is_senti_engine(pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    print("Senti stopped. Note: agents with Senti hooks will now ask/deny every action (fail closed).")
+    if pidf.exists() and pidf.read_text().strip() == str(pid):
+        pidf.unlink(missing_ok=True)
     return 0
 
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import statistics
-import subprocess
 import sys
 import time
 
@@ -16,19 +15,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "..", "prototype", "engine"), os.path.join(HERE, "..", "prototype", "bench")]
 from sessions import all_sessions  # noqa: E402
 
-HOOK = os.environ.get("SENTI_HOOK", os.path.join(os.environ.get("SENTI_HOME", os.path.expanduser("~/.senti")), "bin", "senti-hook"))
-MAP = {"allow": "allow", "ask": "ask", "deny": "block"}
+sys.path.insert(0, HERE)
+from _hook import EngineUnavailable, preflight, send  # noqa: E402
 
 
 def main() -> int:
     out_path = sys.argv[1] if len(sys.argv) > 1 else "sim-results.json"
     rows = []
+    try:
+        preflight(HERE)
+    except EngineUnavailable as e:
+        print(f"ERROR: {e}")
+        return 2
     for name, events in all_sessions().items():
         for e in events:
-            payload = json.dumps({k: v for k, v in e.items() if not k.startswith("_")}).encode()
+            payload = {k: v for k, v in e.items() if not k.startswith("_")}
             event = "prompt" if e["hook_event_name"] == "UserPromptSubmit" else "pre"
             t = time.perf_counter()
-            p = subprocess.run([HOOK, "claude", event], input=payload, capture_output=True)
+            try:
+                verdict, reason = send(payload, event)
+            except EngineUnavailable as e:
+                print(f"ERROR on {e}")
+                return 2
             ms = (time.perf_counter() - t) * 1000
             if event != "pre":
                 continue
@@ -37,9 +45,8 @@ def main() -> int:
                 if fp.startswith(os.path.join(HERE, "..")) or "/webapp/" in fp:
                     os.makedirs(os.path.dirname(fp), exist_ok=True)
                     open(fp, "w").write(e["tool_input"]["content"])
-            out = json.loads(p.stdout or b"{}").get("hookSpecificOutput", {})
             rows.append({"session": name, "id": e["_case_id"], "tool": e["tool_name"], "label": e["_label"],
-                         "verdict": MAP.get(out.get("permissionDecision"), "?"), "reason": out.get("permissionDecisionReason", ""),
+                         "verdict": verdict, "reason": reason,
                          "ms": round(ms, 1)})
     json.dump(rows, open(out_path, "w"), indent=1)
     n = len(rows)

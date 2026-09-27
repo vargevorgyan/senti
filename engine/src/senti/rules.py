@@ -195,11 +195,124 @@ def decode_hidden(cmd: str) -> list[str]:
 
 
 # Static scan of script / code content (a script is just more commands)
-SCRIPT_SENSITIVE = re.compile(r"\.ssh|\.aws/credentials|\.aws['\"]|id_rsa|id_ed25519|\.env\b|Keychains|Cookies|\.gnupg|"
+# `.env` files (incl. prod.env, secrets.env) but not `process.env` / `import.meta.env`, and not templates like `.env.example`
+SCRIPT_SENSITIVE = re.compile(r"\.ssh|\.aws/credentials|\.aws['\"]|id_rsa|id_ed25519|"
+                              r"(?<!process)(?<!meta)\.env(?!\.(example|sample|template|dist|defaults))\b|"
+                              r"Keychains|Cookies|\.gnupg|"
                               r"login\.keychain|\.netrc|\.npmrc|\.pypirc|\.kube/config|find-generic-password")
-SCRIPT_NET = re.compile(r"requests\.(post|put|request|patch)|urlopen\(|urllib\.request|fetch\(|axios\.|http\.client|"
+SCRIPT_NET = re.compile(r"(?m)requests\.(post|put|request|patch)|urlopen\(|urllib\.request|fetch\(|axios\.|http\.client|"
                         r"socket\.connect|\bcurl\s|\bwget\s|httpx\.(post|put|request|Client|AsyncClient)|"
-                        r"XMLHttpRequest|net\.connect|smtplib|ftplib|paramiko|\bnc\s")
+                        r"XMLHttpRequest|net\.connect|smtplib|ftplib|paramiko|\bnc\s|"
+                        # DNS lookups can carry data out too (e.g. <chunk-of-secret>.attacker.net); shell tools only in
+                        # command position so a comment like "let's dig into this" does not count
+                        r"gethostbyname|getaddrinfo|dns\.resolver|(?:^|[;&|`(\[,])\s*['\"]?(?:dig|nslookup)['\"]?[\s,]")
+# A network call that can carry data out (used to follow where dumped data goes)
+NET_SINK = re.compile(r"\b(requests|httpx|aiohttp|session|client)\.(get|post|put|patch|delete|request)\(|urlopen\(|"
+                      r"urllib\.request\.Request\(|\bfetch\(|axios[.(]|http\.client|socket\.|gethostbyname|smtplib|\.sendall\(")
+# The whole environment (API keys, tokens, passwords) as one value
+ENV_EXPR = (r"(dict\(\s*os\.environ(\.items\(\))?\s*\)|str\(\s*os\.environ\s*\)|repr\(\s*os\.environ\s*\)|"
+            r"json\.dumps?\(\s*(dict\(\s*)?os\.environ\b|\{\s*\*\*\s*os\.environ\s*\}|os\.environ\.copy\(\)|"
+            r"JSON\.stringify\(\s*process\.env\s*\)|\{\s*\.\.\.process\.env\s*\})")
+ENV_SHELL_PIPE = re.compile(r"(?m)(^|[;&|]\s*)(env|printenv|export\s+-p)\s*\|[^\n]*\b(curl|wget|nc|ncat|socat|http)\b")
+AUTH_KEYS = r"authorized_keys2?"
+BACKDOOR_WRITE = re.compile(
+    # open(<args, one level of nested calls allowed> authorized_keys ..., 'a'|'w'|'x'[b][+])
+    r"open\((?:[^()\n]|\([^()\n]*\))*?(?:" + AUTH_KEYS + r"|\([^()\n]*" + AUTH_KEYS + r"[^()\n]*\))"
+    r"(?:[^()\n]|\([^()\n]*\))*,\s*(mode\s*=\s*)?['\"](w|a|x)b?\+?['\"]|"
+    r"(?<![=<>-])>>?\s*['\"]?[^\s;|&'\"]*" + AUTH_KEYS + r"|\btee\b[^\n]*" + AUTH_KEYS + r"|"
+    r"(write_text|write_bytes|copyfile|copy2?|move|rename|replace|symlink|appendFileSync|appendFile|writeFileSync|writeFile)"
+    r"\([^\n]*" + AUTH_KEYS + r"|ssh-copy-id")
+DOWNLOADERS = re.compile(r"\b(requests|httpx)\.get\(|urlopen\(|urlretrieve\(|\bfetch\(|\bcurl\b|\bwget\b")
+DOWNLOAD_DEST = [
+    re.compile(r"urlretrieve\([^,\n]+,\s*['\"]([^'\"]+)['\"]"),
+    re.compile(r"\bcurl\b[^\n]*?(?:\s-[A-Za-z]*o\s*|\s--output[ =])['\"]?([^\s'\";|&]+)"),
+    re.compile(r"\bwget\b[^\n]*?\s-O\s*['\"]?([^\s'\";|&]+)"),
+    re.compile(r"open\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]wb['\"]"),  # bytes written after a download call
+]
+SCRIPT_EXEC = re.compile(r"subprocess|Popen|os\.system|os\.exec|child_process|spawn\(|execv|\bchmod\b|os\.chmod|fs\.chmod")
+SHELL_RUN = re.compile(r"^\s*(sudo\s+)?(bash|sh|zsh|source|\.|exec|nohup)\s")
+# Packing up personal folders
+SCRIPT_ARCHIVE = re.compile(r"make_archive|zipfile|tarfile|\bzip\s+-r|\btar\s+-?c|copytree")
+HOME_REF = re.compile(r"~|expanduser|\$HOME|\bHOME\b|homedir\(\)|Path\.home|os\.environ\[['\"]HOME")
+PERSONAL_NAME = re.compile(r"['\"/](Documents|Desktop|Pictures|Movies|Music|Downloads)\b")
+
+
+def _code_pattern(path_re: str) -> str:
+    """Turn a file-path regex (PERSISTENCE_PATTERNS) into one that finds the path inside code text."""
+    if path_re.startswith("^/etc/"):
+        return r"['\"\s]/etc/"
+    p = path_re.replace("(^|/)", "(?:^|[/'\"\\s~])").lstrip("^")
+    if p.startswith("/"):
+        p = r"(?:^|[/'\"\s~])" + p[1:]
+    return p.replace("$", r"(?![\w.-])")
+
+
+def _literal_hint(path_re: str) -> str:
+    """Longest plain-text piece of a path regex, used as a cheap `in` pre-check before the (slow) alternation."""
+    p = path_re.replace("(^|/)", "").replace("^", "").replace("$", "").replace("\\.", ".")
+    return max(re.split(r"[()|?*+\[\]{}\\]", p), key=len).lstrip("/")  # relative paths have no leading slash
+
+
+SCRIPT_PERSISTENCE = re.compile("|".join([_code_pattern(p) for p in PERSISTENCE_PATTERNS] + [r"\bcrontab\b"]), re.M)
+PERSISTENCE_HINTS = tuple({_literal_hint(p) for p in PERSISTENCE_PATTERNS} | {"crontab"})
+SCRIPT_WRITES = re.compile(r"open\([^\n]*['\"](w|a|x)b?\+?['\"]|\.write_text\(|\.write_bytes\(|\.write\(|"
+                           r"(?<![=<>-])>>?\s*['\"]?[~/$.]|appendFile|writeFile|\btee\b|crontab\s+-")
+
+
+def _assigned_vars(text: str, expr: str) -> set[str]:
+    return {m.group(1) for m in re.finditer(r"(?m)^\s*(?:const |let |var )?(\w+)\s*=\s*[^\n]*" + expr, text)}
+
+
+def _env_exfil(text: str) -> bool:
+    """The whole environment ends up in a network call (same line, or via a variable), or `env | curl`."""
+    if "environ" not in text and "process.env" not in text and not ("env" in text and "|" in text):
+        return False
+    if ENV_SHELL_PIPE.search(text):
+        return True
+    env = re.compile(ENV_EXPR)
+    lines = text.splitlines()
+    if any(env.search(l) and NET_SINK.search(l) for l in lines):
+        return True
+    for var in _assigned_vars(text, ENV_EXPR):
+        use = re.compile(rf"\b{re.escape(var)}\b")
+        if any(use.search(l) and NET_SINK.search(l) and not env.search(l) for l in lines):
+            return True
+    return False
+
+
+def _backdoor(text: str) -> bool:
+    """Something is written into ~/.ssh/authorized_keys (directly, or through a variable holding the path)."""
+    if "authorized_keys" not in text and "ssh-copy-id" not in text:
+        return False
+    if BACKDOOR_WRITE.search(text):
+        return True
+    for var in _assigned_vars(text, AUTH_KEYS):
+        v = re.escape(var)
+        if re.search(rf"open\(\s*{v}\s*,\s*(mode\s*=\s*)?['\"](w|a|x)b?\+?['\"]|\b{v}\.(write_text|write_bytes)\(|"
+                     rf"(copyfile|copy2?|move|rename|appendFile|writeFile)\([^\n]*\b{v}\b|>>?\s*\"?\${v}\b", text):
+            return True
+    return False
+
+
+def _download_exec(text: str) -> bool:
+    """A file fetched from the network is later made executable or run."""
+    if not any(k in text for k in ("get(", "urlopen", "urlretrieve", "fetch(", "curl", "wget")) or not DOWNLOADERS.search(text):
+        return False
+    lines = text.splitlines()
+    for pat in DOWNLOAD_DEST:
+        for m in pat.finditer(text):
+            dest = m.group(1)
+            if len(dest) < 3:
+                continue
+            src_line = text.count("\n", 0, m.start())
+            for i, line in enumerate(lines):
+                if i == src_line or dest not in line:
+                    continue
+                if SCRIPT_EXEC.search(line) or SHELL_RUN.search(line) or line.strip().startswith(dest):
+                    return True
+    return False
+
+
 SCRIPT_WIPE = re.compile(
     r"(rmtree|rm\s+-[a-zA-Z]*r[a-zA-Z]*f?|rm\s+-[a-zA-Z]*f[a-zA-Z]*r|unlink|os\.remove|fs\.rm|rimraf|shutil\.move)"
     r"[^\n]{0,160}(~|expanduser|HOME|homedir\(\)|Path\.home)[^\n]{0,80}"
@@ -233,6 +346,18 @@ def scan_code(text: str) -> Decision | None:
     if sens and net:
         return Decision("block", "The script reads secret files and sends data to the internet", "L2-detectors",
                         "script_taint", severity="critical")
+    if _env_exfil(text):
+        return Decision("block", "The script sends all your environment variables (which often hold passwords and API keys) "
+                        "to the internet", "L2-detectors", "script_env_exfil", severity="critical")
+    if _backdoor(text):
+        return Decision("block", "The script adds a login key to your computer, which would let someone else get in",
+                        "L2-detectors", "script_backdoor", severity="critical")
+    if _download_exec(text):
+        return Decision("block", "The script downloads a program from the internet and runs it", "L2-detectors",
+                        "script_download_exec", severity="critical")
+    if SCRIPT_ARCHIVE.search(text) and PERSONAL_NAME.search(text) and HOME_REF.search(text) and net:
+        return Decision("block", "The script packs up your personal folders and sends them to the internet", "L2-detectors",
+                        "script_personal_exfil", severity="critical")
     if SCRIPT_WIPE.search(text):
         return Decision("block", "The script deletes your personal folders (Documents, Desktop, Pictures...)", "L2-detectors",
                         "script_wipe", severity="critical")
@@ -243,6 +368,9 @@ def scan_code(text: str) -> Decision | None:
                  r"['\"]?allow", text) or re.search(r"(?i)ignore (all |any )?(previous|prior) instructions", text):
         return Decision("block", "The script contains text that tries to talk the security check into allowing it", "L2-detectors",
                         "reviewer_injection", severity="critical")
+    if any(h in text for h in PERSISTENCE_HINTS) and SCRIPT_WRITES.search(text) and SCRIPT_PERSISTENCE.search(text):
+        return Decision("ask", "The script changes files that run automatically (shell start-up, login items or scheduled tasks)",
+                        "L2-detectors", "script_persistence", severity="warning")
     if SCRIPT_OBFUSCATION.search(text):
         return Decision("ask", "The script runs hidden or downloaded code", "L2-detectors", "script_obfuscation", severity="warning")
     return None

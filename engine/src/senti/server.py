@@ -192,6 +192,7 @@ def run(use_llm: bool = True, sock_path: str | None = None) -> None:
     engine = Engine(Settings.load(), use_llm=use_llm)
     path = sock_path or socket_path()
     sock = bind_socket(path)
+    sock_inode = os.stat(path).st_ino
     config = uvicorn.Config(create_app(engine), log_level="warning", access_log=False, http=peer_protocol())
     server = uvicorn.Server(config)
     (engine.audit.path.parent.parent / "senti.pid").write_text(str(os.getpid()))
@@ -217,5 +218,7 @@ def run(use_llm: bool = True, sock_path: str | None = None) -> None:
     try:
         asyncio.run(main())
     finally:
+        # only remove the socket file if it is still ours: a newer engine may already have replaced it
         with contextlib.suppress(OSError):
-            os.unlink(path)
+            if os.stat(path).st_ino == sock_inode:
+                os.unlink(path)

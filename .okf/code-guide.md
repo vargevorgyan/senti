@@ -22,6 +22,8 @@ sources:
 | `backend/app/` | Org backend: FastAPI + SQLite (admin API, device API, judge gateway, SSE) | Docker (`backend`) |
 | `admin/src/` | React (Vite, TypeScript) admin panel, design tokens from `docs/design/` | Docker (`admin`, nginx) |
 | `docker-compose.yml` | backend + admin + Ollama "corporate model" | Docker |
+| `scripts/judge_holdout.py` | Held-out judge check: 12 routine scripts + 8 attacks not in the prototype sessions (exit 2 if the engine is not really deciding) | host |
+| `scripts/_hook.py` | Shared hook helper for the replay scripts; fails loudly when the engine is down | host |
 | `scripts/e2e_modes.py` | End-to-end check of all judge modes, push, overrides, approvals, audit upload | host |
 | `demo/make-demo-repo.sh` | Poisoned demo repo (fake secrets, `*.invalid` targets) | host |
 | `scripts/incident_replay.py`, `research/incidents/` | Real incidents replayed through the engine (decisions only, nothing executed) | host |
