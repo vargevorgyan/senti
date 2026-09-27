@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .bus import bus
 from .config import settings
 from .db import Base, SessionLocal, engine, migrate
-from .routers import admin, auth, device
+from .routers import admin, auth, device, gateway
 from .seed import seed
 from .signing import private_key
 
@@ -24,7 +24,8 @@ async def lifespan(app: FastAPI):
     private_key()  # create the signing key on first run
     bus.loop = asyncio.get_running_loop()
     warm = asyncio.create_task(_warm_corporate_model())
-    yield
+    async with gateway.mcp.session_manager.run():  # the MCP endpoint's session manager lives as long as the app
+        yield
     warm.cancel()
 
 
@@ -57,3 +58,5 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(device.router)
+app.include_router(gateway.router)
+app.mount("/api/v1/mcp", gateway.mcp_asgi_app())  # AI agents connect here with a gateway token

@@ -10,3 +10,4 @@
 * [ADR-008: Demo agents are Claude Code, Codex CLI and OpenCode](adr-008-demo-agents.md) - The demo must show Claude (Claude Code), ChatGPT (Codex CLI) and local models (OpenCode) protected by the same engine.
 * [ADR-009: Name, repository and visibility](adr-009-name-and-repo.md) - The project is named Senti; the GitHub repo vargevorgyan/senti is private with collaborator progerg.
 * [ADR-010: No client UI app; FastAPI engine and backend, React admin panel](adr-010-no-client-ui-fastapi-react.md) - The Mac side is only hooks/plugins plus a host-native FastAPI engine on a Unix socket; the organization side is a FastAPI backend and a React admin panel in Docker. Supersedes ADR-001.
+* [ADR-011: Server gateway over MCP, policy in plain English, supervisor LLM](adr-011-server-gateway.md) - Agents reach a company server only through a Senti MCP gateway; access is written in plain English and compiled to role rules; unclear cases go to a supervisor model, not a human.

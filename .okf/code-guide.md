@@ -19,7 +19,9 @@ sources:
 | `engine/src/senti/` | Python package `senti` — the local engine and CLI | natively on the Mac (never Docker) |
 | `engine/hook/senti-hook.swift` | Compiled hook client: HTTP/1.1 over the Unix socket, fail closed per agent | spawned by agents |
 | `engine/src/senti/data/opencode-senti.ts` | OpenCode plugin template (installed by `senti install opencode`) | inside OpenCode |
-| `backend/app/` | Org backend: FastAPI + SQLite (admin API, device API, judge gateway, SSE) | Docker (`backend`) |
+| `backend/app/` | Org backend: FastAPI + SQLite (admin API, device API, judge gateway, SSE, **server gateway / MCP**: `routers/gateway.py`, `gateway_policy.py`, `policy_compiler.py`) | Docker (`backend`) |
+| `scripts/gateway_agent.py` | Scripted agent using the server gateway through a real MCP client | host |
+| `demo/make-server-data.py` | Fake company server (files + SQLite) for the gateway demo | host |
 | `admin/src/` | React (Vite, TypeScript) admin panel, design tokens from `docs/design/` | Docker (`admin`, nginx) |
 | `docker-compose.yml` | backend + admin + Ollama "corporate model" | Docker |
 | `scripts/judge_holdout.py` | Held-out judge check: 12 routine scripts + 8 attacks not in the prototype sessions (exit 2 if the engine is not really deciding) | host |
@@ -66,7 +68,7 @@ uv run senti install all               # or --project DIR for one repo
 
 ```bash
 cd engine && uv run pytest -q          # 230 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
-cd backend && uv run pytest -q         # 24 API tests
+cd backend && uv run pytest -q         # 101 tests: API, invites, gateway checker attacks, MCP end to end
 cd admin && npx playwright test        # 7 browser tests against the running stack
 SENTI_SOCKET=... uv run --project engine python scripts/e2e_modes.py   # 14 live checks
 ```

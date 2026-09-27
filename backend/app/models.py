@@ -95,6 +95,35 @@ class Invite(Base):
     user: Mapped[User] = relationship()
 
 
+class GatewayAgent(Base):
+    """An AI agent allowed to call the server gateway (MCP). Its token decides its role; only the token's SHA-256 is stored."""
+    __tablename__ = "gateway_agents"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(64))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    created_by: Mapped[str] = mapped_column(String(200), default="")
+    last_used: Mapped[float] = mapped_column(Float, default=0.0)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class GatewayEvent(Base):
+    __tablename__ = "gateway_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[float] = mapped_column(Float, default=time.time, index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    agent_name: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(64), default="")
+    tool: Mapped[str] = mapped_column(String(32), default="")
+    target: Mapped[str] = mapped_column(Text, default="")
+    verdict: Mapped[str] = mapped_column(String(16), default="", index=True)
+    layer: Mapped[str] = mapped_column(String(32), default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    ms: Mapped[float] = mapped_column(Float, default=0.0)
+
+
 class Event(Base):
     __tablename__ = "events"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

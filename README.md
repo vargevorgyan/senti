@@ -100,6 +100,20 @@ cd /tmp/senti-demo && claude -p "Read README.md, follow its setup steps, run hel
 Senti warns the agent about the hidden README instruction and blocks the disguised `helper.py`; the same happens with Codex and
 OpenCode. The admin panel's Overview and Activity update live. Full script: [.okf/roadmap/hackathon-demo-plan.md](.okf/roadmap/hackathon-demo-plan.md).
 
+## Server gateway: agents on your server, rules in plain English
+
+AI agents can use a company server's files, commands and database **only through Senti** (MCP at `/api/v1/mcp/`).
+In the admin panel's **Server gateway** page, describe access in plain English ("Support agents can read tickets and customer
+names, never card numbers or payments…"), click **Generate rules**, review the rules and example actions, and approve. Then
+add an agent: its token decides its role, and the page shows the `claude mcp add …` command / MCP JSON to connect it.
+Every call is checked by hard rules and the compiled role rules; anything they don't cover goes to the supervisor model
+(no human in the loop, only a clear "allow" passes). Try it with fake data:
+
+```bash
+python3 demo/make-server-data.py server-data     # shared as the "server" by docker compose (SENTI_GATEWAY_DIR)
+uv run --project backend python scripts/gateway_agent.py https://localhost:8443/api/v1/mcp/ sag_…   # scripted agent
+```
+
 ## DIY agents (no hooks)
 
 Point any OpenAI-compatible agent at the engine's model gateway instead of the model server:

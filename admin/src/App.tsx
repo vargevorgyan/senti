@@ -6,6 +6,7 @@ import Activity from './pages/Activity'
 import Approvals from './pages/Approvals'
 import ChangeLog from './pages/ChangeLog'
 import Devices from './pages/Devices'
+import Gateway from './pages/Gateway'
 import Judge from './pages/Judge'
 import Login from './pages/Login'
 import Overview from './pages/Overview'
@@ -61,6 +62,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
     { to: '/profiles', icon: 'shield', label: 'Profiles' },
     { to: '/people', icon: 'people', label: 'People and roles' },
     { to: '/devices', icon: 'laptop', label: 'Devices' },
+    { to: '/gateway', icon: 'key', label: 'Server gateway' },
     { to: '/judge', icon: 'brain', label: 'Corporate judge' },
     { to: '/changes', icon: 'log', label: 'Change log' },
   ]
@@ -97,6 +99,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <Route path="/profiles/:id" element={<ProfileEditor />} />
           <Route path="/people" element={<People />} />
           <Route path="/devices" element={<Devices />} />
+          <Route path="/gateway" element={<Gateway />} />
           <Route path="/judge" element={<Judge />} />
           <Route path="/changes" element={<ChangeLog />} />
           <Route path="*" element={<Navigate to="/" replace />} />

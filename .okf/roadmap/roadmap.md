@@ -59,6 +59,7 @@ Policy server with role profiles from the identity provider; corporate filter mo
 **LLM gateway** redacting secrets before cloud models; autonomous-agent identities with owners, budgets and expiry; observe-first rollout.
 MVP in the draft: 3 profiles (developer, PM, autonomous agent), hooks for Claude Code and Cursor.
 
-Removed from the roadmap by the team (2026-09-26): MCP gateway, judge fine-tuning.
+Removed from the roadmap by the team (2026-09-26): MCP gateway, judge fine-tuning. The owner brought back a focused server
+gateway on 2026-09-27 — built: [Server gateway](/architecture/server-gateway.md), [ADR-011](/decisions/adr-011-server-gateway.md).
 
 [^concept-draft]: Concept draft — MVP scope and later items

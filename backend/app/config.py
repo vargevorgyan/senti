@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     # Per-device limits on the device API (requests per minute), so a leaked or rogue device can't burn the corporate model
     judge_rpm: int = 60
     approvals_rpm: int = 20
+    # Server gateway (MCP): the folder and SQLite database agents may reach, only through the gateway
+    gateway_root: str = ""        # default: <data_dir>/server-files
+    gateway_db: str = ""          # default: <data_dir>/server.db
+    gateway_rpm: int = 120        # per agent token
+    gateway_cmd_timeout_s: float = 10.0
+    # Model that turns the plain-English policy into rules (default: the corporate model). Use a strong one; it runs rarely.
+    policy_model_url: str = ""
+    policy_model: str = ""
+    policy_model_api_key: str = ""
     cors_origins: str = "http://localhost:8080,http://localhost:5173"
     # corporate model (OpenAI-compatible chat completions endpoint, e.g. Ollama)
     corp_model_url: str = "http://localhost:11434/v1"
@@ -29,6 +38,14 @@ class Settings(BaseSettings):
     token_ttl_hours: int = 12
     tls_cert: str = ""       # path to the TLS certificate served by the admin container
     https_port: int = 8443
+
+    @property
+    def gateway_root_path(self) -> str:
+        return self.gateway_root or f"{self.data_dir}/server-files"
+
+    @property
+    def gateway_db_path(self) -> str:
+        return self.gateway_db or f"{self.data_dir}/server.db"
 
     @property
     def db_url(self) -> str:

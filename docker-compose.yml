@@ -21,8 +21,15 @@ services:
       SENTI_DEMO_ENROLL_CODE: ${SENTI_DEMO_ENROLL_CODE:-}
       SENTI_TLS_CERT: /tls/cert.pem
       SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
+      # Server gateway (MCP): what agents may reach, only through Senti. Seed a demo: python3 demo/make-server-data.py server-data
+      SENTI_GATEWAY_ROOT: /srv/server-files
+      SENTI_GATEWAY_DB: /srv/server.db
+      SENTI_POLICY_MODEL_URL: ${SENTI_POLICY_MODEL_URL:-}
+      SENTI_POLICY_MODEL: ${SENTI_POLICY_MODEL:-}
+      SENTI_POLICY_MODEL_API_KEY: ${SENTI_POLICY_MODEL_API_KEY:-}
     volumes:
       - backend-data:/data
+      - ${SENTI_GATEWAY_DIR:-./server-data}:/srv
       - tls:/tls:ro
     ports:
       # Plain HTTP for local development only (always 127.0.0.1). Macs use https://HOST:8443 via the admin container.
