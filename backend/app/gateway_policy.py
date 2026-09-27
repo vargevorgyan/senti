@@ -82,6 +82,9 @@ class RolePolicy(BaseModel):
     commands: CommandRules = Field(default_factory=CommandRules)
     database: DatabaseRules = Field(default_factory=DatabaseRules)
     notes: str = ""  # extra guidance for the supervisor for this role
+    # Folders (relative to the shared root) the admin exposed to agents; set by the runner at call time, never by the
+    # compiled policy. Empty = no restriction (the root is already just the exposed folder).
+    scope: list[str] = Field(default_factory=list, exclude=True)
 
 
 class CompiledPolicy(BaseModel):
@@ -184,11 +187,27 @@ def resolve_path(root: Path, path: str) -> tuple[Path | None, str]:
     return real, "" if rel == "." else rel
 
 
+def in_scope(role: RolePolicy, rel: str) -> bool:
+    """Inside one of the folders the admin exposed."""
+    if not role.scope or "." in role.scope:
+        return True
+    return any(rel == f or rel.startswith(f + "/") for f in role.scope)
+
+
+def toward_scope(role: RolePolicy, rel: str) -> bool:
+    """A parent folder of an exposed folder (listed only to show the way there)."""
+    if not role.scope or "." in role.scope:
+        return True
+    return rel == "" or any(f.startswith(rel + "/") for f in role.scope)
+
+
 def check_path(role: RolePolicy, root: Path, path: str, mode: str) -> GatewayDecision:
     """mode: read | write | list (non-recursive listing of a folder)."""
     real, rel = resolve_path(root, path)
     if real is None:
         return block(f"'{path}' is outside the files this server shares", "hard-rule")
+    if not (in_scope(role, rel) or (mode == "list" and toward_scope(role, rel))):
+        return block(f"'{rel or '/'}' is not in the folders shared with agents", "hard-rule")
     if rel and _match(rel, role.files.deny):
         return block(f"Your role may not access '{rel}'", rel=rel)
     if mode == "write":
@@ -205,7 +224,7 @@ def check_path(role: RolePolicy, root: Path, path: str, mode: str) -> GatewayDec
 
 def visible(role: RolePolicy, rel: str) -> bool:
     """Entry shown in a listing: not denied, and readable or on the way to something readable."""
-    if _match(rel, role.files.deny):
+    if not (in_scope(role, rel) or toward_scope(role, rel)) or _match(rel, role.files.deny):
         return False
     readable = role.files.read + role.files.write
     return _match(rel, readable) or any(_literal_prefix(p).startswith(rel + "/") or _literal_prefix(p) == rel for p in readable)
@@ -248,6 +267,8 @@ def check_command(role: RolePolicy, root: Path, command: str) -> tuple[GatewayDe
         real, rel = resolve_path(root, cand)
         if real is None:
             return block(f"'{cand}' is outside the files this server shares", "hard-rule"), argv
+        if not in_scope(role, rel):
+            return block(f"'{rel or '/'}' is not in the folders shared with agents; name a folder inside them", "hard-rule"), argv
         if real.is_dir() and prog in RECURSIVE_PROGRAMS:
             # a recursive tool on a folder reads everything inside it: every file there must be allowed, nothing denied
             if dir_contains_denied(rel, role.files.deny) or not covers_whole_dir(rel, role.files.read + role.files.write):
@@ -284,9 +305,11 @@ _WRITE_OPS = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELET
 
 
 def run_sql(role: RolePolicy, db_path: str, sql: str, max_rows: int = 200,
-            max_seconds: float = 5.0) -> tuple[GatewayDecision, list[str], list[list[Any]]]:
-    """SQLite's own authorizer decides every table/column the statement touches, so string tricks can't smuggle access."""
+            max_seconds: float = 5.0, db_name: str = "") -> tuple[GatewayDecision, list[str], list[list[Any]]]:
+    """SQLite's own authorizer decides every table/column the statement touches, so string tricks can't smuggle access.
+    With several databases, rules may name a table as `<db_name>.<table>` (only that database) or just `<table>` (any)."""
     rules = role.database
+    q = f"{db_name.lower()}." if db_name else ""
     if not (rules.read_tables or rules.write_tables):
         return block("Your role has no database access"), [], []
     if not isinstance(sql, str) or not sql.strip() or len(sql) > 5000:
@@ -307,15 +330,16 @@ def run_sql(role: RolePolicy, db_path: str, sql: str, max_rows: int = 200,
                     denied.append("the database's full schema")
                     return sqlite3.SQLITE_DENY
                 return sqlite3.SQLITE_OK
-            if t not in readable and t not in ctes:
+            if t not in readable and (not q or q + t not in readable) and t not in ctes:
                 denied.append(f"table '{t}'")
                 return sqlite3.SQLITE_DENY
-            if f"{t}.{(arg2 or '').lower()}" in rules.deny_columns:
+            col = f"{t}.{(arg2 or '').lower()}"
+            if col in rules.deny_columns or (q and q + col in rules.deny_columns):
                 denied.append(f"column '{t}.{arg2}'")
                 return sqlite3.SQLITE_DENY
             return sqlite3.SQLITE_OK
         if action in _WRITE_OPS:
-            if t not in rules.write_tables:
+            if t not in rules.write_tables and (not q or q + t not in rules.write_tables):
                 denied.append(f"writing to '{t}'")
                 return sqlite3.SQLITE_DENY
             return sqlite3.SQLITE_OK

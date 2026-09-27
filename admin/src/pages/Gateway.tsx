@@ -12,7 +12,7 @@ interface RoleRules {
 interface Example { role: string; tool: string; arg: string; expected: string; got: string; reason: string; ok: boolean; why: string }
 interface Draft { text: string; compiled: { roles: Record<string, RoleRules> }; examples: Example[]; warnings: string[]; compiled_at: number }
 interface Active { text: string; compiled: { roles: Record<string, RoleRules> }; version: number; approved_at: number; approved_by: string }
-interface Sources { folder: string; database: string; configured: boolean; share: string; folders: string[]; databases: string[]; error?: string | null }
+interface Sources { folders: string[]; databases: string[]; db_names: Record<string, string>; configured: boolean; share: string; options: { folders: string[]; databases: string[] }; error?: string | null }
 interface PolicyState { draft: Draft | null; active: Active | null; inventory: string }
 interface Agent { id: string; name: string; role: string; created_at: number; last_used: number; calls: number; revoked: boolean }
 interface NewAgent extends Agent { token: string; url: string; claude_code: string; bridge_command: string; mcp_json: unknown }
@@ -43,44 +43,68 @@ function RoleCard({ name, r }: { name: string; r: RoleRules }) {
   )
 }
 
-/** What agents can reach: a folder and a SQLite file inside the host folder shared with Senti. */
+/** What agents can reach: folders and SQLite files inside the host folder shared with Senti (several of each). */
 function SourcesPanel({ onSaved }: { onSaved: () => void }) {
   const src = useLoad<Sources>(() => api('/admin/gateway/sources'))
   const toast = useToast()
-  const [pick, setPick] = useState<{ folder: string; database: string } | null>(null)
+  const [pick, setPick] = useState<{ folders: string[]; databases: string[] } | null>(null)
   const s = src.data
-  const cur = pick ?? (s ? { folder: s.folder, database: s.database } : { folder: '.', database: '' })
-  const changed = !!s && (cur.folder !== s.folder || cur.database !== s.database || !s.configured)
+  const cur = pick ?? (s ? { folders: s.folders, databases: s.databases } : { folders: [], databases: [] })
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x))
+  const changed = !!s && (!same(cur.folders, s.folders) || !same(cur.databases, s.databases) || !s.configured)
+  const whole = cur.folders.includes('.')
+  // a folder whose parent is chosen is already included
+  const coveredBy = (f: string) => whole && f !== '.' ? '.' : cur.folders.find(p => p !== '.' && f !== p && f.startsWith(p + '/'))
+  const toggle = (key: 'folders' | 'databases', v: string) => setPick({ ...cur, [key]: cur[key].includes(v) ? cur[key].filter(x => x !== v) : [...cur[key], v] })
+  const dbName = (rel: string) => s?.db_names[rel] ?? rel.split('/').pop()!.replace(/\.(db|sqlite3?|sqlite)$/i, '')
   const save = async () => {
+    // drop folders already covered by a chosen parent, so the saved list says what it means
+    const folders = cur.folders.filter(f => !coveredBy(f))
     try {
-      await api('/admin/gateway/sources', { method: 'PUT', body: cur })
+      await api('/admin/gateway/sources', { method: 'PUT', body: { folders, databases: cur.databases } })
       setPick(null); src.reload(); onSaved()
-      toast('Saved. Agents now use this folder and database. Regenerate the rules if the paths or tables changed.')
+      toast('Saved. Agents now reach these folders and databases. Regenerate the rules if paths or tables changed.')
     } catch (e: any) { toast(e.message, true) }
   }
   return (
     <section className="panel">
       <div className="panel-head"><h2>What agents can reach</h2>
         <button className="btn ghost sm" type="button" onClick={() => { setPick(null); src.reload() }}>Refresh</button></div>
-      <p className="small muted">Everything below is inside <code>{s?.share ?? '…'}</code> on the server. Agents see only the folder and database you choose here; the rules below decide the rest.</p>
+      <p className="small muted">Everything below is inside <code>{s?.share ?? '…'}</code> on the server. Agents see only what you tick here; the rules below decide what each role may do with it. Paths in the policy start from this folder, like <code>support/tickets/**</code>.</p>
       {s?.error && <p className="small"><span className="pill block">Runner unavailable</span> {s.error}</p>}
       {s && (
-        <div className="grid2">
-          <label className="field"><span>Folder</span>
-            <select value={cur.folder} onChange={e => setPick({ ...cur, folder: e.target.value })}>
-              {s.folders.map(f => <option key={f} value={f}>{f === '.' ? '(the whole shared folder)' : f}</option>)}
-            </select>
-            <span className="hint">Paths in the policy are relative to this folder.</span></label>
-          <label className="field"><span>Database (SQLite)</span>
-            <select value={cur.database} onChange={e => setPick({ ...cur, database: e.target.value })}>
-              <option value="">No database</option>
-              {s.databases.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <span className="hint">{s.databases.length ? 'Files ending in .db, .sqlite or .sqlite3. The file itself is never readable as a file.' : 'No .db / .sqlite files found in the shared folder.'}</span></label>
+        <div className="grid2 sources">
+          <fieldset className="field"><legend>Folders <span className="muted small">{cur.folders.filter(f => !coveredBy(f)).length} chosen</span></legend>
+            <div className="picklist" role="group" aria-label="Folders">
+              {s.options.folders.map(f => {
+                const by = coveredBy(f)
+                const depth = f === '.' ? 0 : f.split('/').length
+                return (
+                  <label key={f} className={`pickrow${by ? ' covered' : ''}`} style={{ paddingLeft: 10 + depth * 16 }}>
+                    <input type="checkbox" checked={!!by || cur.folders.includes(f)} disabled={!!by} onChange={() => toggle('folders', f)} />
+                    <span className="mono">{f === '.' ? 'Everything in the shared folder' : f.split('/').pop()}</span>
+                    {by && <span className="small muted">included</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
+          <fieldset className="field"><legend>Databases (SQLite) <span className="muted small">{cur.databases.length} chosen</span></legend>
+            <div className="picklist" role="group" aria-label="Databases">
+              {s.options.databases.length ? s.options.databases.map(d => (
+                <label key={d} className="pickrow">
+                  <input type="checkbox" checked={cur.databases.includes(d)} onChange={() => toggle('databases', d)} />
+                  <span className="mono">{d}</span>
+                  {cur.databases.includes(d) && cur.databases.length > 1 && <span className="small muted">agents call it “{dbName(d)}”</span>}
+                </label>
+              )) : <p className="small muted" style={{ padding: 10 }}>No .db / .sqlite files in the shared folder.</p>}
+            </div>
+            <span className="hint">With several databases, agents name one in <code>query_db</code> and rules can say <code>crm.customers</code>. Database files are never readable as files.</span>
+          </fieldset>
         </div>
       )}
       <div className="row">
-        <button className="btn primary" type="button" onClick={save} disabled={!changed}>Save</button>
+        <button className="btn primary" type="button" onClick={save} disabled={!changed || (!cur.folders.length && !cur.databases.length)}>Save</button>
         {s && !s.configured && <span className="small muted">Not chosen yet: using the install default.</span>}
       </div>
       <p className="small muted">To share a different folder of the server, run <code>./senti-server install --gateway-dir /path/to/folder</code> on it (your files keep their owner).</p>

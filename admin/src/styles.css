@@ -263,3 +263,14 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
 .bar { height: 6px; border-radius: 3px; background: var(--sand); overflow: hidden; margin-top: 6px; }
 .bar i { display: block; height: 100%; background: var(--sage); transition: width .4s; }
 @media (max-width: 900px) { .modes.modes3 { grid-template-columns: 1fr; } .modelrow { flex-wrap: wrap; } }
+
+/* Server gateway: what agents can reach */
+.sources fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
+.sources legend { font: 600 13px/16px var(--font-sans); padding: 0; margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; }
+.picklist { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); max-height: 280px; overflow: auto; }
+.pickrow { display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.pickrow:last-child { border-bottom: none; }
+.pickrow:hover { background: var(--surface-raised); }
+.pickrow input { accent-color: var(--ink); margin: 0; flex: none; }
+.pickrow.covered { color: var(--ink-muted); cursor: default; }
+.pickrow .small { margin-left: auto; }

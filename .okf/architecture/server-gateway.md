@@ -46,11 +46,14 @@ Senti performs the action itself: no shell, confined to the shared folder, minim
 
 The installer mounts one host folder into the runner as `/srv` (`SENTI_GATEWAY_DIR`, default `./server-data`; another folder
 with `./senti-server install --gateway-dir /path` — its files keep their owner, the runner gets an ACL). In the admin panel
-(**Server gateway → What agents can reach**) the admin picks, inside it, the **folder** agents work in (paths in the policy are
-relative to it) and the **SQLite file** for `query_db` (or none). Stored in the backend (`gateway_sources`), sent with every
-runner call; the runner resolves both and refuses anything outside `/srv`, and denies the database file itself to file tools
-and commands. A source that disappears fails closed. No choice yet = the install default (`server-files/`, `server.db`).
-Demo data (`--demo-data`) is opt-in only.
+(**Server gateway → What agents can reach**) the admin ticks, inside it, **any number of folders** and **SQLite files**.
+Paths in the policy are relative to the shared folder (`northwind/support/tickets/**`); everything outside the ticked folders is
+refused before any rule (listing only shows the way to them; recursive commands must stay inside them). With several
+databases `query_db` takes a `database` name (file name without `.db`; `main` works when there is one) and rules may qualify
+tables as `<db>.<table>` / `<db>.<table>.<column>`; unqualified rules apply to every database. The choice is stored in the
+backend (`gateway_sources`), sent with every runner call and re-checked by the runner (nothing outside `/srv`; database files
+never readable as files). A chosen source that disappears is dropped; nothing left fails closed. Demo data (`--demo-data`) is
+opt-in only.
 
 # Security properties (tested)[^tests]
 

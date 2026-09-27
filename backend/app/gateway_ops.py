@@ -11,6 +11,7 @@ authorizer), so query_db is checked and executed in one step.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -43,28 +44,63 @@ def inside_share(rel: str) -> Path:
     return p
 
 
-def root(req: dict | None = None) -> Path:
-    """The folder agents work in: the admin's choice (sent with each call), or the install default."""
-    if req is not None and "folder" in req:
-        p = inside_share(str(req["folder"]))
-        if not p.is_dir():
-            raise ValueError("the chosen folder doesn't exist any more")
-        return p
-    p = Path(settings.gateway_root_path)
-    p.mkdir(parents=True, exist_ok=True)
-    return p.resolve()
+class Sources:
+    """What one call may reach: the root paths are relative to, the exposed folders (scope) and the databases by name."""
+
+    def __init__(self, root: Path, scope: list[str], dbs: dict[str, str]):
+        self.root, self.scope, self.dbs = root, scope, dbs
 
 
-def db_path(req: dict | None = None) -> str:
-    """The SQLite file agents may query ("" = no database), chosen the same way."""
-    if req is not None and "database" in req:
-        if not req["database"]:
-            return ""
-        p = inside_share(str(req["database"]))
-        if not (p.is_file() and p.suffix.lower() in DB_SUFFIXES):
-            raise ValueError("the chosen database file doesn't exist any more")
-        return str(p)
-    return settings.gateway_db_path
+def _db_names(rels: list[str]) -> dict[str, str]:
+    """Short names agents use in query_db: the file name without .db (the whole path when two files share a name)."""
+    stems = [Path(r).stem.lower() for r in rels]
+    return {(st if stems.count(st) == 1 else re.sub(r"[^a-z0-9_]+", "_", r.lower().rsplit(".", 1)[0])): r
+            for st, r in zip(stems, rels)}
+
+
+def sources(req: dict | None = None) -> Sources:
+    """The admin's choice, sent with each call ("folders" + "databases", inside the shared host folder), or the install
+    default. Chosen folders or files that no longer exist are dropped: less access, never more."""
+    req = req or {}
+    if "folder" in req or "database" in req:  # older single-choice form
+        req = {"folders": [req.get("folder", ".")], "databases": [req["database"]] if req.get("database") else []}
+    if "folders" not in req and "databases" not in req:
+        p = Path(settings.gateway_root_path)
+        p.mkdir(parents=True, exist_ok=True)
+        return Sources(p.resolve(), [], {"server": settings.gateway_db_path})
+    base = share()
+    if base is None:
+        raise ValueError("no shared folder is mounted (SENTI_GATEWAY_SHARE)")
+    scope = []
+    for f in req.get("folders") or []:
+        p = inside_share(str(f))
+        if p.is_dir():
+            scope.append("." if p == base else p.relative_to(base).as_posix())
+    dbs = {}
+    for name, rel in _db_names([str(d) for d in req.get("databases") or []]).items():
+        p = inside_share(rel)
+        if p.is_file() and p.suffix.lower() in DB_SUFFIXES:
+            dbs[name] = str(p)
+    if not scope and not dbs:
+        raise ValueError("none of the chosen folders or databases exist any more")
+    # nothing exposed = nothing reachable (an empty scope would otherwise mean "no restriction")
+    return Sources(base, scope or ["\x00none"], dbs)
+
+
+def pick_db(src: Sources, name: str) -> tuple[str, str] | GatewayDecision:
+    """The database a query_db call means: the named one, or the only one."""
+    if not src.dbs:
+        return GatewayDecision("block", "No database is connected to this server gateway", "hard-rule")
+    if name:
+        key = name.strip().lower().removesuffix(".db").removesuffix(".sqlite3").removesuffix(".sqlite")
+        if key == "main" and len(src.dbs) == 1:  # SQLite's own name for "the database"
+            return next(iter(src.dbs.items()))
+        if key not in src.dbs:
+            return GatewayDecision("block", f"Unknown database '{name}'. Available: {', '.join(sorted(src.dbs))}", "hard-rule")
+        return key, src.dbs[key]
+    if len(src.dbs) > 1:
+        return GatewayDecision("block", f"Several databases are connected; name one: {', '.join(sorted(src.dbs))}", "hard-rule")
+    return next(iter(src.dbs.items()))
 
 
 def browse() -> dict:
@@ -92,16 +128,16 @@ def browse() -> dict:
     return {"folders": sorted(folders), "databases": sorted(dbs)}
 
 
-def guard_db_file(role: RolePolicy, r: Path, dbp: str) -> RolePolicy:
-    """The database file itself is never readable as a file (that would skip the column rules): deny it outright."""
-    if not dbp:
-        return role
-    p = Path(dbp).resolve()
-    if r not in p.parents:
-        return role
-    rel = p.relative_to(r).as_posix()
+def scoped(role: RolePolicy, src: Sources) -> RolePolicy:
+    """The role as it applies to this call: limited to the exposed folders, and database files are never readable as
+    files (that would skip the column rules)."""
     role = role.model_copy(deep=True)
-    role.files.deny = [*role.files.deny, rel, f"{rel}-*"]  # plus SQLite's -wal / -journal files
+    role.scope = list(src.scope)
+    for path in src.dbs.values():
+        p = Path(path).resolve()
+        if src.root in p.parents:
+            rel = p.relative_to(src.root).as_posix()
+            role.files.deny = [*role.files.deny, rel, f"{rel}-*"]  # plus SQLite's -wal / -journal files
     return role
 
 
@@ -109,10 +145,9 @@ def decision_json(d: GatewayDecision) -> dict:
     return {"verdict": d.verdict, "reason": d.reason, "layer": d.layer}
 
 
-def decide(role: RolePolicy, tool: str, arg: str, r: Path, dbp: str) -> tuple[GatewayDecision, dict]:
-    if tool == "query_db" and not dbp:
-        return GatewayDecision("block", "No database is connected to this server gateway", "hard-rule"), {}
-    role = guard_db_file(role, r, dbp)
+def decide(role: RolePolicy, tool: str, arg: str, src: Sources, db: str = "") -> tuple[GatewayDecision, dict]:
+    role = scoped(role, src)
+    r = src.root
     if tool == "list_files":
         return check_path(role, r, arg or ".", "list"), {}
     if tool == "read_file":
@@ -121,12 +156,17 @@ def decide(role: RolePolicy, tool: str, arg: str, r: Path, dbp: str) -> tuple[Ga
         return check_path(role, r, arg, "write"), {}
     if tool == "run_command":
         return check_command(role, r, arg)[0], {}
-    d, cols, rows = run_sql(role, dbp, arg)
+    picked = pick_db(src, db)
+    if isinstance(picked, GatewayDecision):
+        return picked, {}
+    name, path = picked
+    d, cols, rows = run_sql(role, path, arg, db_name=name if len(src.dbs) > 1 else "")
     return d, ({"columns": cols, "rows": rows} if d.verdict == "allow" else {})
 
 
-def execute(role: RolePolicy, tool: str, arg: str, content: str, r: Path, dbp: str) -> str:
-    role = guard_db_file(role, r, dbp)
+def execute(role: RolePolicy, tool: str, arg: str, content: str, src: Sources) -> str:
+    role = scoped(role, src)
+    r = src.root
     if tool == "list_files":
         real, _ = resolve_path(r, arg or ".")
         if real is None or not real.is_dir():
@@ -162,21 +202,24 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "browse":
         return browse()
     try:
-        r, dbp = root(req), db_path(req)
+        src = sources(req)
     except ValueError as e:
         return {"error": str(e)}
     if op == "inventory":
-        return {"text": policy_compiler.inventory(r, dbp)}
+        return {"text": policy_compiler.inventory(src)}
     if op == "db_schema":
-        return {"schema": {t: sorted(c) for t, c in policy_compiler.db_schema(dbp).items()}}
+        return {"schema": {t: sorted(c) for t, c in policy_compiler.db_schema(src.dbs).items()}}
     if op == "evaluate":
         policy = CompiledPolicy.model_validate(req.get("policy") or {})
-        return {"results": policy_compiler.evaluate_examples(policy, list(req.get("examples") or []), r, dbp)}
+        return {"results": policy_compiler.evaluate_examples(policy, list(req.get("examples") or []), src)}
     tool, arg = req.get("tool"), req.get("arg", "")
     if op not in {"check", "exec"} or tool not in TOOLS or not isinstance(arg, str):
         return {"error": "bad request"}
     role = RolePolicy.model_validate(req.get("role") or {})
-    d, extra = decide(role, tool, arg, r, dbp)
+    db = req.get("db") or ""
+    if not isinstance(db, str):
+        return {"error": "bad request"}
+    d, extra = decide(role, tool, arg, src, db)
     if op == "check" or d.verdict == "block":
         return {"decision": decision_json(d), **extra}
     if tool == "query_db":
@@ -184,4 +227,4 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     content = req.get("content") or ""
     if not isinstance(content, str):
         return {"error": "bad request"}
-    return {"decision": decision_json(d), "output": execute(role, tool, arg, content, r, dbp)}
+    return {"decision": decision_json(d), "output": execute(role, tool, arg, content, src)}

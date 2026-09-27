@@ -17,7 +17,8 @@ import httpx
 from .gateway_policy import CompiledPolicy, check_command, check_path, run_sql
 
 PROMPT = """You turn an administrator's plain-English access policy for AI agents on a server into JSON rules.
-The agents can use five tools on the server: list_files, read_file, write_file, run_command (no shell), query_db (SQLite).
+The agents can use five tools on the server: list_files, read_file, write_file, run_command (no shell), query_db (SQLite;
+with several databases the agent names one).
 
 SERVER CONTENTS (for reference):
 {inventory}
@@ -34,11 +35,13 @@ Reply with JSON only, in exactly this shape:
     "commands": {{"allow": ["<program>"]}},
     "database": {{"read_tables": ["<table>"], "write_tables": ["<table>"], "deny_columns": ["<table>.<column>"]}},
     "notes": "<anything the rules above can't express, for the supervisor>"}}}},
- "examples": [{{"role": "<role-slug>", "tool": "read_file|write_file|list_files|run_command|query_db", "arg": "<path, command or SQL>",
+ "examples": [{{"role": "<role-slug>", "tool": "read_file|write_file|list_files|run_command|query_db", "arg": "<path, command or SQL>", "database": "<database name for query_db, when there are several>",
                "expected": "allow|block", "why": "<short>"}}]}}
 
 Rules:
-- Globs are relative to the shared folder. Use "folder/**" for a whole folder, "folder/*.md" for some files.
+- Globs are relative to the shared root, exactly as paths appear in SERVER CONTENTS (e.g. "northwind/support/**").
+- With several databases, name tables as "<database>.<table>" and columns as "<database>.<table>.<column>".
+- Use "folder/**" for a whole folder, "folder/*.md" for some files.
 - When the policy grants a kind of data, grant every place it lives: the matching folders AND the matching database tables.
   If only part of it is allowed (e.g. "contact details but not card numbers"), grant the table and list the forbidden
   columns in "deny_columns"; for files that mix allowed and forbidden data, leave them out rather than deny them.
@@ -51,30 +54,48 @@ Rules:
 """
 
 
-def inventory(root: Path, db_path: str, max_entries: int = 60) -> str:
-    lines = ["Files (shared folder):"]
-    n = 0
-    for p in sorted(root.rglob("*")) if root.exists() else []:
-        if n >= max_entries:
-            lines.append("  …")
-            break
-        rel = p.relative_to(root).as_posix()
-        if p.is_symlink() or rel.count("/") > 2:
-            continue
-        lines.append(f"  {rel}{'/' if p.is_dir() else ''}")
-        n += 1
-    lines.append("Database tables:")
-    if not db_path:
-        lines.append("  (no database connected)")
-        return "\n".join(lines)
+def _tables(db_path: str) -> list[tuple[str, list[str]]]:
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        for (t,) in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%' order by name"):
-            cols = [r[0] for r in con.execute("select name from pragma_table_info(?)", (t,))]
-            lines.append(f"  {t}({', '.join(cols)})")
+        return [(t, [r[0] for r in con.execute("select name from pragma_table_info(?)", (t,))])
+                for (t,) in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%' order by name")]
+    finally:
         con.close()
-    except sqlite3.Error:
-        lines.append("  (no database)")
+
+
+def inventory(src, db_path: str | None = None, max_entries: int = 80) -> str:
+    """What the model sees: the exposed folders (paths relative to the shared root) and each database's tables.
+    `src` is app.gateway_ops.Sources (or, in older callers, a root Path plus one database path)."""
+    if isinstance(src, Path):
+        root, scope, dbs = src, [], ({"server": db_path} if db_path else {})
+    else:
+        root, scope, dbs = src.root, [f for f in src.scope if f != "\x00none"], src.dbs
+    lines = ["Files (shared folder):"]
+    starts = [root] if not scope or "." in scope else [root / f for f in scope]
+    n = 0
+    for start in starts:
+        if start != root and start.is_dir():
+            lines.append(f"  {start.relative_to(root).as_posix()}/")
+        for p in sorted(start.rglob("*")) if start.exists() else []:
+            if n >= max_entries:
+                lines.append("  …")
+                break
+            rel = p.relative_to(root).as_posix()
+            if p.is_symlink() or rel.count("/") > 3 or any(part.startswith(".") for part in p.relative_to(root).parts[:-1]):
+                continue
+            if p.suffix.lower() in (".db", ".sqlite", ".sqlite3") or "-journal" in p.name or p.name.endswith("-wal"):
+                continue  # databases are listed below, never as files
+            lines.append(f"  {rel}{'/' if p.is_dir() else ''}")
+            n += 1
+    lines.append("Databases:" if len(dbs) > 1 else "Database tables:")
+    if not dbs:
+        lines.append("  (no database connected)")
+    for name, path in dbs.items():
+        try:
+            for t, cols in _tables(path):
+                lines.append(f"  {name + '.' if len(dbs) > 1 else ''}{t}({', '.join(cols)})")
+        except sqlite3.Error:
+            lines.append(f"  {name}: (can't open)")
     return "\n".join(lines)
 
 
@@ -99,15 +120,23 @@ def parse(text: str) -> dict:
     return json.loads(m.group(0))
 
 
-def evaluate_examples(policy: CompiledPolicy, examples: list[dict], root: Path, db_path: str) -> list[dict]:
-    """Replay the model's examples through the real checker. Nothing is executed on the live data."""
+def evaluate_examples(policy: CompiledPolicy, examples: list[dict], src, db_path: str | None = None) -> list[dict]:
+    """Replay the model's examples through the real checker. Nothing is executed on the live data (SQL examples run
+    against throwaway copies of the databases)."""
+    from .gateway_ops import Sources, pick_db, scoped
+    if isinstance(src, Path):
+        src = Sources(src, [], {"server": db_path} if db_path else {})
+    copies = {}
+    for name, path in src.dbs.items():
+        if Path(path).exists():
+            copies[name] = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+            shutil.copy(path, copies[name])
+    test_src = Sources(src.root, src.scope, copies)
+    root = src.root
     out = []
-    tmp_db = None
-    if Path(db_path).exists():
-        tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
-        shutil.copy(db_path, tmp_db)  # SQL examples run against a throwaway copy
     for ex in examples[:40]:
         role = policy.roles.get(str(ex.get("role", "")).strip().lower())
+        role = scoped(role, src) if role is not None else None
         tool, arg = str(ex.get("tool", "")), str(ex.get("arg", ""))
         if role is None:
             got, reason = "block", "unknown role"
@@ -117,8 +146,12 @@ def evaluate_examples(policy: CompiledPolicy, examples: list[dict], root: Path, 
         elif tool == "run_command":
             d, _ = check_command(role, root, arg)
             got, reason = d.verdict, d.reason
-        elif tool == "query_db" and tmp_db:
-            d, _, _ = run_sql(role, tmp_db, arg)
+        elif tool == "query_db" and copies:
+            picked = pick_db(test_src, str(ex.get("database", "") or ""))
+            if isinstance(picked, tuple):
+                d, _, _ = run_sql(role, picked[1], arg, db_name=picked[0] if len(copies) > 1 else "")
+            else:
+                d = picked
             got, reason = d.verdict, d.reason
         else:
             got, reason = "block", "unknown tool"
@@ -127,8 +160,8 @@ def evaluate_examples(policy: CompiledPolicy, examples: list[dict], root: Path, 
                     "got": got, "reason": reason,
                     # a supervisor case is fine for an expected block only if the supervisor blocks it; flag it for review
                     "ok": got == expected, "needs_supervisor": got == "supervisor"})
-    if tmp_db:
-        Path(tmp_db).unlink(missing_ok=True)
+    for path in copies.values():
+        Path(path).unlink(missing_ok=True)
     return out
 
 
@@ -150,17 +183,21 @@ def dropped_items(raw: dict, policy: CompiledPolicy) -> list[str]:
     return warnings
 
 
-def db_schema(db_path: str) -> dict[str, set[str]]:
-    if not db_path:
-        return {}
-    try:
-        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        tables = [t for (t,) in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'")]
-        out = {t.lower(): {c.lower() for (c,) in con.execute("select name from pragma_table_info(?)", (t,))} for t in tables}
-        con.close()
-        return out
-    except sqlite3.Error:
-        return {}
+def db_schema(dbs) -> dict[str, set[str]]:
+    """Tables → columns of the connected databases (with several: also "<database>.<table>")."""
+    if isinstance(dbs, str):
+        dbs = {"server": dbs} if dbs else {}
+    out: dict[str, set[str]] = {}
+    for name, path in dbs.items():
+        try:
+            for t, cols in _tables(path):
+                c = {x.lower() for x in cols}
+                out.setdefault(t.lower(), set()).update(c)
+                if len(dbs) > 1:
+                    out[f"{name}.{t.lower()}"] = c
+        except sqlite3.Error:
+            continue
+    return out
 
 
 def consistency_warnings(policy: CompiledPolicy, schema: dict[str, set[str]]) -> list[str]:
@@ -173,7 +210,7 @@ def consistency_warnings(policy: CompiledPolicy, schema: dict[str, set[str]]) ->
             if schema and t not in schema:
                 warnings.append(f"{name}: table '{t}' does not exist in the database")
         for col in r.database.deny_columns:
-            t, _, c = col.partition(".")
+            t, _, c = col.rpartition(".")
             if schema and (t not in schema or c not in schema[t]):
                 warnings.append(f"{name}: hidden column '{col}' does not exist (ignored)")
             elif t in r.database.read_tables + r.database.write_tables:

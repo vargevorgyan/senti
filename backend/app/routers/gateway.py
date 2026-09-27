@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .. import corporate, policy_compiler
@@ -58,9 +58,13 @@ def active_policy(db: Session) -> tuple[CompiledPolicy | None, str]:
 
 
 def gateway_sources(db: Session) -> dict:
-    """The folder and SQLite file (inside the shared host folder) the admin picked; {} = the install default."""
+    """The folders and SQLite files (inside the shared host folder) the admin picked; {} = the install default."""
     v = _kv(db, "gateway_sources")
-    return {"folder": v.get("folder", "."), "database": v.get("database", "")} if v else {}
+    if not v:
+        return {}
+    if "folders" not in v:  # saved by the earlier single-choice form
+        return {"folders": [v.get("folder", ".")], "databases": [v["database"]] if v.get("database") else []}
+    return {"folders": list(v.get("folders") or []), "databases": list(v.get("databases") or [])}
 
 
 def policy_model_config(db: Session) -> dict:
@@ -133,7 +137,7 @@ class Blocked(Exception):
     pass
 
 
-async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, dict, dict]:
+async def gate(ctx: Context, tool: str, arg: str, db_name: str = "") -> tuple[Caller, RolePolicy, dict, dict]:
     """Authenticate, rate-limit, decide (rules in the runner → supervisor). Raises Blocked with the reason the agent should
     see. Returns the runner's check answer (query_db results come with it)."""
     t0 = time.perf_counter()
@@ -151,22 +155,23 @@ async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, d
             d = GatewayDecision("block", f"No approved policy for role '{agent.role}' yet", "hard-rule")
         else:
             try:
-                resp = await runner_call({"op": "check", "tool": tool, "arg": arg, "role": role.model_dump(), **sources})
+                resp = await runner_call({"op": "check", "tool": tool, "arg": arg, "db": db_name, "role": role.model_dump(),
+                                          **sources})
                 dj = resp["decision"]
                 d = GatewayDecision(dj["verdict"], dj["reason"], dj["layer"])
             except (RunnerUnavailable, KeyError) as e:
                 d = GatewayDecision("block", str(e) if isinstance(e, RunnerUnavailable) else "bad runner answer", "hard-rule")
             if d.verdict == "supervisor":
                 d = await supervise(db, agent, text, role, tool, arg, d)
-    log(agent, tool, arg, d, t0)
+    log(agent, tool, f"[{db_name}] {arg}" if db_name else arg, d, t0)
     if d.verdict != "allow":
         raise Blocked(f"Blocked by Senti: {d.reason}")
     return agent, role, resp, sources
 
 
-async def run_tool(ctx: Context, tool: str, arg: str, content: str = "") -> str:
+async def run_tool(ctx: Context, tool: str, arg: str, content: str = "", db_name: str = "") -> str:
     try:
-        _, role, resp, sources = await gate(ctx, tool, arg)
+        _, role, resp, sources = await gate(ctx, tool, arg, db_name)
     except Blocked as e:
         return str(e)
     if tool == "query_db":
@@ -206,9 +211,10 @@ async def run_command(ctx: Context, command: str) -> str:
     return await run_tool(ctx, "run_command", command)
 
 
-@mcp.tool(description="Run one SQL statement on the server's SQLite database. Returns columns and up to 200 rows.")
-async def query_db(ctx: Context, sql: str) -> str:
-    return await run_tool(ctx, "query_db", sql)
+@mcp.tool(description="Run one SQL statement on a SQLite database of this server. Returns columns and up to 200 rows. "
+                      "When several databases are connected, name one in `database` (a refused call lists them).")
+async def query_db(ctx: Context, sql: str, database: str = "") -> str:
+    return await run_tool(ctx, "query_db", sql, db_name=database)
 
 
 class TokenGate:
@@ -314,22 +320,26 @@ async def compile_policy(body: PolicyIn, admin: Admin = Auth, db: Session = Depe
 
 @router.get("/sources")
 async def get_sources(admin: Admin = Auth, db: Session = Depends(get_db)):
-    """What agents can reach: the chosen folder and database, and what the shared host folder contains to pick from."""
+    """What agents can reach: the chosen folders and databases, and what the shared host folder contains to pick from."""
+    from ..gateway_ops import _db_names
     try:
         options = await runner_call({"op": "browse"})
     except RunnerUnavailable as e:
         options = {"folders": [], "databases": [], "error": str(e)}
     cur = gateway_sources(db)
     if not cur:  # install default: server-files/ and server.db inside the shared folder, when they exist
-        cur = {"folder": "server-files" if "server-files" in options.get("folders", []) else ".",
-               "database": "server.db" if "server.db" in options.get("databases", []) else ""}
-    return {**cur, "configured": bool(gateway_sources(db)), "share": settings.gateway_dir_label or "the shared folder",
-            "folders": options.get("folders", []), "databases": options.get("databases", []), "error": options.get("error")}
+        cur = {"folders": ["server-files"] if "server-files" in options.get("folders", []) else [],
+               "databases": ["server.db"] if "server.db" in options.get("databases", []) else []}
+    names = {rel: name for name, rel in _db_names(cur["databases"]).items()}
+    return {**cur, "db_names": names, "configured": bool(gateway_sources(db)),
+            "share": settings.gateway_dir_label or "the shared folder",
+            "options": {"folders": options.get("folders", []), "databases": options.get("databases", [])},
+            "error": options.get("error")}
 
 
 class SourcesIn(BaseModel):
-    folder: str = "."
-    database: str = ""
+    folders: list[str] = Field(default_factory=list, max_length=50)
+    databases: list[str] = Field(default_factory=list, max_length=20)
 
 
 @router.put("/sources")
@@ -338,13 +348,21 @@ async def put_sources(body: SourcesIn, admin: Admin = Auth, db: Session = Depend
         options = await runner_call({"op": "browse"})
     except RunnerUnavailable as e:
         raise HTTPException(503, str(e))
-    if body.folder not in options.get("folders", []):
-        raise HTTPException(422, "choose a folder inside the shared folder")
-    if body.database and body.database not in options.get("databases", []):
-        raise HTTPException(422, "choose a SQLite file (.db, .sqlite) inside the shared folder, or no database")
-    _set_kv(db, "gateway_sources", {"folder": body.folder, "database": body.database})
-    db.add(ChangeLog(actor=admin.email, action="gateway_sources.update", target=body.folder,
-                     detail={"database": body.database}))
+    folders = sorted(set(body.folders))
+    databases = sorted(set(body.databases))
+    if not folders and not databases:
+        raise HTTPException(422, "choose at least one folder or database")
+    bad = [f for f in folders if f not in options.get("folders", [])]
+    if bad:
+        raise HTTPException(422, f"'{bad[0]}' is not a folder inside the shared folder")
+    bad = [d for d in databases if d not in options.get("databases", [])]
+    if bad:
+        raise HTTPException(422, f"'{bad[0]}' is not a SQLite file (.db, .sqlite) inside the shared folder")
+    if "." in folders:
+        folders = ["."]  # the whole shared folder already includes every other choice
+    _set_kv(db, "gateway_sources", {"folders": folders, "databases": databases})
+    db.add(ChangeLog(actor=admin.email, action="gateway_sources.update", target=", ".join(folders) or "(no folders)",
+                     detail={"databases": databases}))
     db.commit()
     return await get_sources(admin, db)
 
