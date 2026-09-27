@@ -17,6 +17,7 @@ Knowledge base for **Senti** — a local guardrail layer between people and the 
 # Sections
 
 * [Business](business/) - why Senti exists, positioning, business model, competitors, risks
+* [Use cases](use-cases/) - what people use Senti for: individual developers, teams and organizations, security and compliance
 * [Architecture](architecture/) - how Senti works: hook, engine, judge, sandbox, org backend, admin panel
 * [Integrations](integrations/) - Claude Code, Codex CLI, OpenCode and how other agents are covered
 * [Research and benchmarks](research/) - benchmarks, simulations, competitor and tool evaluations

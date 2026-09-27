@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Creation**: [Use cases](/use-cases/) section — 12 use cases for individual developers, organizations and security teams, each with actor, flow, features, verification status and limits.
 * **Creation**: [Secret brokering](/architecture/secret-brokering.md), [Local model gateway](/architecture/model-gateway.md).
 * **Update**: TLS by default with certificate pinning, JWT revocation and SSE tickets, peer-process verification, required sandbox — [Org backend](/architecture/org-backend-and-profiles.md), [Hook client](/architecture/hook-client.md), [Roadmap](/roadmap/roadmap.md); second security review fixes — [Security review](/research/security-review-2026-09-27.md).
 * **Update**: Security review — 20 findings, highs fixed (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, backend spoofing) — [Security review](/research/security-review-2026-09-27.md).

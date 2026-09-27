@@ -54,7 +54,7 @@ the organization side (backend, admin panel, corporate model) runs in Docker ([A
 4. [Organization backend and profiles](/architecture/org-backend-and-profiles.md) and [Admin panel](/architecture/admin-panel.md).
 5. [Agent coverage](/integrations/agent-coverage.md) and [Real-agent tests](/research/real-agent-tests.md).
 6. [Demo plan](/roadmap/hackathon-demo-plan.md), [Roadmap](/roadmap/roadmap.md), [Open questions](/roadmap/open-questions.md).
-7. [Problem](/business/problem.md) and [Value proposition](/business/value-proposition.md) — why this exists.
+7. [Problem](/business/problem.md), [Value proposition](/business/value-proposition.md) and [Use cases](/use-cases/) — why this exists and who it serves.
 8. [Glossary](/glossary.md).
 
 # Ground rules for agents working on Senti
