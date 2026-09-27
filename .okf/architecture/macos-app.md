@@ -3,7 +3,7 @@ type: Component
 title: Senti macOS app
 description: Planned native SwiftUI menu-bar app — approval popup, activity log, per-agent settings — that fronts the local engine.
 tags: [architecture, macos, swiftui, ui]
-status: superseded
+status: deprecated
 generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
 sources:
   - id: session

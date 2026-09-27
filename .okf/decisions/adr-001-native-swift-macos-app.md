@@ -3,7 +3,7 @@ type: Decision
 title: "ADR-001: Native Swift macOS app for the MVP"
 description: "The MVP is a native SwiftUI menu-bar app with an in-process or sidecar engine, chosen by the team over Tauri, Electron and SwiftUI+Python."
 tags: [decision, macos, stack]
-status: superseded
+status: deprecated
 generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
 sources:
   - id: session

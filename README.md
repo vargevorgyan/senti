@@ -128,4 +128,4 @@ SENTI_SOCKET=~/.senti/senti.sock uv run --project engine python scripts/e2e_mode
 
 ## Status
 
-Full build complete on branch `feat/full-build` (2026-09-27). See [TASKS.md](TASKS.md) for remaining work.
+Full build merged into `main` (2026-09-27). See [TASKS.md](TASKS.md) for remaining work.

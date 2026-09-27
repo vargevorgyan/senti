@@ -3,6 +3,7 @@
 ## 2026-09-27
 * **Creation**: [Real AI-agent incidents replayed through Senti](/research/agent-incidents.md) — 19 sourced incidents, replay harness and regression tests; ~15 new rules (agent bypass flags, infra destruction, git discards, home-wipe traps, hidden Unicode, injection patterns, MCP after injection).
 * **Update**: Business docs and AGENTS.md no longer describe a Mac UI app — Senti on the Mac is hooks/plugins + a local engine — [Business model](/business/business-model.md), [Value proposition](/business/value-proposition.md).
+* **Update**: Docs cleanup — fixed invalid frontmatter in [API keys use case](/use-cases/using-api-keys-without-exposing-them.md), replaced `superseded` status with `deprecated`, removed stale `feat/full-build` branch references, refreshed `AGENTS.md` code map.
 * **Decision**: ZCode and Antigravity support dropped by the repo owner (ZCode hooks don't fire for its native agent; Antigravity passes no task text and would only be testable on the owner's Google account).
 * **Creation**: Integrations for [Cursor](/integrations/cursor.md), [Cline](/integrations/cline.md), [Hermes Agent](/integrations/hermes.md), [OpenClaw](/integrations/openclaw.md) — adapters, installers, fail-closed replies, unit tests; not yet live-tested. Agent registry `engine/src/senti/agents.py`.
 * **Update**: Review leftovers closed — git exec keys/globals, Grep content over secrets, demo code off by default, signed judge/approval answers — [Security review](/research/security-review-2026-09-27.md).

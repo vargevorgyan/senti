@@ -1,6 +1,6 @@
 # Senti — build task board
 
-Living task summary for the full build (branch `feat/full-build`). Any agent picking this up:
+Living task summary for the full build (merged into `main` on 2026-09-27). Any agent picking this up:
 read `AGENTS.md`, then this file, then `.okf/getting-started.md`. Update this file as you go
 (move items, add notes, date entries in the log at the bottom). All docs are in English.
 
@@ -93,7 +93,7 @@ Legend: [x] done · [~] partial · [ ] todo
 3. ~~Peer verification~~ — done (socket token + LOCAL_PEERPID parent chain).
 4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): pass static facts (no network, project-only writes) or few-shot examples in the cached prompt.
 5. **Codex hook trust** for managed rollouts (`requirements.toml` managed hooks).
-6. **Push `feat/full-build` and open a PR** (the agent did not push).
+6. ~~Push the full build~~ — done: pushed directly to `main` on 2026-09-27.
 7. Postgres option for the backend and multi-admin roles (only one admin role today).
 8. Designer's real logo SVGs into `admin/public/`.
 

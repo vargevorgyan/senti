@@ -37,7 +37,7 @@ the organization side (backend, admin panel, corporate model) runs in Docker ([A
 
 | Item | State |
 |---|---|
-| Name / repo | Senti · `github.com/vargevorgyan/senti` (private); full build on branch `feat/full-build` (not pushed) |
+| Name / repo | Senti · `github.com/vargevorgyan/senti` (private); full build on `main` (pushed 2026-09-27) |
 | Local engine | `engine/` — Python package `senti`, FastAPI on a Unix socket, CLI; 68 tests |
 | Hooks | Claude Code, Codex CLI, OpenCode — all tested live |
 | Org backend | `backend/` — FastAPI + SQLite, Docker; 13 tests |

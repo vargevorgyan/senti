@@ -13,7 +13,7 @@ sources:
     resource: /prototype/engine/
     title: Prototype engine source in this repo
   - id: build
-    resource: /engine/src/senti, /backend/app, /admin/src (branch feat/full-build)
+    resource: /engine/src/senti, /backend/app, /admin/src
     title: Full-build source code
     author: claude-code/2.1.283
 ---

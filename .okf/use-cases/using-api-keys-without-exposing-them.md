@@ -1,7 +1,7 @@
 ---
 type: Use Case
 title: Letting agents use API keys without seeing them
-description: Agents call APIs with real keys that never enter their context: they write {{senti:NAME}} and Senti injects the value only at run time, only for allowed sites.
+description: "Agents call APIs with real keys that never enter their context: they write {{senti:NAME}} and Senti injects the value only at run time, only for allowed sites."
 tags: [use-case, individual]
 status: stable
 generated: { by: claude-code/2.1.283, at: '2026-09-27T09:00:00Z' }

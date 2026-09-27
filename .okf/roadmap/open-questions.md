@@ -28,7 +28,6 @@ sources:
 # Still open
 
 - Real logo SVGs from the designer (artifact blobs are not downloadable; admin uses a placeholder icon).
-- Push the `feat/full-build` branch and open a PR (not done by the agent).
 - Make `senti run` (sandbox) automatic for agents when a profile sets `features.sandbox`.
 - Codex hook trust for managed rollouts (`requirements.toml` managed hooks skip trust).
 - Clean up ~7 GB of test models on the original dev Mac.

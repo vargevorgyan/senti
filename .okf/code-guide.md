@@ -9,7 +9,7 @@ stale_after: 2026-12-31
 sources:
   - id: repo
     resource: /engine, /backend, /admin, /scripts, /demo, /docker-compose.yml
-    title: Senti source tree on branch feat/full-build
+    title: Senti source tree on main
 ---
 
 # Layout

@@ -14,7 +14,7 @@ sources:
     resource: /prototype/results/res_rules_py.json
     title: Same simulation with a Python hook client
   - id: build
-    resource: /engine/src/senti, /backend/app, /admin/src (branch feat/full-build)
+    resource: /engine/src/senti, /backend/app, /admin/src
     title: Full-build source code
     author: claude-code/2.1.283
 ---
