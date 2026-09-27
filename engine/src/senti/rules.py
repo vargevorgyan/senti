@@ -241,9 +241,13 @@ TEXT_TOOLS = {"awk", "gawk", "mawk", "sed", "gsed"}
 RUNNERS = {"uv": {"run"}, "poetry": {"run"}, "pipenv": {"run"}, "npm": {"exec", "x"}, "pnpm": {"exec", "dlx"}, "yarn": {"dlx", "exec"},
            "bun": {"x"}, "npx": None, "bunx": None, "uvx": None, "pipx": {"run"}, "hatch": {"run"}, "pdm": {"run"}, "rye": {"run"}}
 RUNNER_VALUE_FLAGS = {"--with", "--python", "-p", "--project", "--directory", "--from", "-w", "--package", "--env-file", "-c", "--call"}
-GIT_EXEC_KEYS = re.compile(r"(?i)^(core\.(fsmonitor|pager|editor|hookspath|sshcommand|askpass|gitproxy)|alias\.|filter\.|diff\..*textconv|"
-                           r"credential\.|gpg\.program|sequence\.editor|include\.path|includeif\.|url\..*insteadof|remote\..*url|"
-                           r"http\.proxy|uploadpack\.|receive\.|protocol\.)")
+GIT_EXEC_KEYS = re.compile(r"(?i)^(core\.(fsmonitor|pager|editor|hookspath|sshcommand|askpass|gitproxy|alternaterefscommand|"
+                           r"worktree|attributesfile|excludesfile)|alias\.|filter\.|diff\.|merge\.|pager\.|difftool\.|mergetool\.|"
+                           r"interactive\.|credential\.|gpg\.|sequence\.editor|include\.path|includeif\.|url\..*insteadof|remote\.|"
+                           r"http\.|uploadpack\.|receive\.|protocol\.|init\.templatedir|ssh\.|submodule\.|fetch\.|trailer\.|"
+                           r"sendemail\.|web\.browser|browser\.|man\.|help\.browser|instaweb\.|clean\.requireforce)")
+GIT_VALUE_GLOBALS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--exec-path",
+                     "--attr-source", "--list-cmds"}
 GIT_NET_SUBS = {"clone", "fetch", "pull", "push", "ls-remote", "submodule", "remote", "archive"}
 SAFE_SUBCOMMANDS = {
     "git": {"status", "diff", "log", "show", "branch", "add", "commit", "checkout", "switch", "fetch", "pull", "stash",
@@ -672,12 +676,17 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
         if prog == "git":
             gi, globals_risky = 0, False
             while gi < len(args) and args[gi].startswith("-"):
-                if args[gi] in {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"} and gi + 1 < len(args):
-                    if args[gi] == "-c" and GIT_EXEC_KEYS.search(args[gi + 1].split("=", 1)[0]):
+                g = args[gi]
+                if g in GIT_VALUE_GLOBALS and gi + 1 < len(args):
+                    if g in {"-c", "--config-env"} and GIT_EXEC_KEYS.search(args[gi + 1].split("=", 1)[0]):
                         globals_risky = True
+                    if g in {"--exec-path", "--git-dir", "--work-tree", "--config-env"}:
+                        all_safe = False
                     gi += 2
                 else:
-                    if args[gi].startswith(("--exec-path", "--git-dir", "--work-tree")):
+                    if g.startswith("--config-env=") and GIT_EXEC_KEYS.search(g.split("=", 2)[1]):
+                        globals_risky = True
+                    if g.startswith(("--exec-path", "--git-dir", "--work-tree", "--config-env")):
                         all_safe = False
                     gi += 1
             sub = args[gi] if gi < len(args) else ""
@@ -894,6 +903,10 @@ def check_action(tool: str, inp: dict, cwd: str, project: str) -> tuple[Decision
         if tool == "Grep" and pattern and any(fnmatch.fnmatch(n, os.path.basename(g)) for g in expand_braces(pattern) for n in SECRET_SAMPLES):
             return Decision("ask", f"Searches inside files with passwords or API keys ({pattern})", "L1-rules", "grep_secret_files",
                             severity="warning"), facts
+        if tool == "Grep" and not pattern and inp.get("output_mode") == "content" and os.path.isdir(p) and project_has_secrets(p):
+            # printing matching lines across a folder that holds .env/keys could print secret values
+            return Decision("ask", "Prints matching lines from a folder that contains secret files (.env, keys); limit it with a glob",
+                            "L1-rules", "grep_content_secrets", severity="warning"), facts
         if kind == "normal" and any(inside(p, os.path.join(HOME, d)) for d in AGENT_NOTE_DIRS):
             return Decision("allow", "Reads the agent's own notes", "L1-rules", "agent_notes"), facts
         if kind == "sensitive":

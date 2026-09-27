@@ -130,6 +130,8 @@ def overview(admin: Admin = Auth, db: Session = Depends(get_db)):
     return {
         "org": settings.org_name,
         "default_password": check_password("senti-admin", admin.password_hash),
+        "demo_code_active": bool(settings.demo_enroll_code and (c := db.get(EnrollmentCode, settings.demo_enroll_code))
+                                 and c.uses_left > 0 and (not c.expires_at or c.expires_at > time.time())),
         "devices": {"total": len(devices), "online": sum(1 for d in devices if now - d.last_seen < ONLINE_S)},
         "users": db.query(func.count(User.id)).scalar(),
         "profiles": db.query(func.count(Profile.id)).scalar(),

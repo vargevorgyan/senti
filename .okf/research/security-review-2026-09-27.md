@@ -57,13 +57,22 @@ specs and custom registries; curl `-F f=@file`/`-d@file`; value-less flags swall
 next prompt; override dropping judge privacy/instructions; enrollment hijack of existing accounts; user deletion no-op; malformed
 events poisoning batches; engine `git status` running repo fsmonitor.
 
+# Leftovers closed (third pass)
+
+`git -c diff.external=…`, `merge.*.driver`, `pager.*`, `difftool.*`, `--config-env` and other exec-capable git keys → ask;
+git global options with values (`--namespace`, `--super-prefix`, `--attr-source`) no longer shift the subcommand, so profile denies
+match; Grep printing lines (`output_mode: content`, OpenCode grep) over a folder with secret files → ask; the shared demo enrollment
+code is off by default (and limited to 20 uses / 7 days when enabled, with an admin warning); corporate judge verdicts and approval
+statuses are **signed by the org key with a per-request nonce and device id**, verified by the engine (unsigned or replayed → block/ask);
+"Always allow" keys include the working folder.
+
 # Open
 
 - `SAFE_DOMAINS` still includes `github.com` for `WebFetch` (attacker content can live there; injection scanning is the mitigation).
 - Same-user processes can still read `hook.token` through uninspected means (peer verification now asks when the caller isn't the claimed agent).
 - The judge sometimes over-blocks (e.g. `DROP TABLE` in a script → block instead of ask).
 
-After both reviews: engine 161 tests, backend 22, Playwright 7, e2e 14/14, simulation 22/22 dangerous stopped (95–97% exact across runs).
+After both reviews and the leftovers: engine 175 tests, backend 24, Playwright 7, e2e 14/14, simulation 22/22 dangerous stopped (95–97% exact across runs).
 
 [^review]: Security review sub-agent report
 [^tests]: Regression tests for every confirmed bypass

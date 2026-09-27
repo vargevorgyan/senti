@@ -10,7 +10,7 @@ export interface Overview {
   org: string; devices: { total: number; online: number }; users: number; profiles: number; events_24h: number
   by_verdict: Record<Verdict, number>; by_agent: Record<string, number>; by_layer: Record<string, number>; llm_share: number
   latency_ms: { p50: number; p95: number }; top_rules: [string, number][]; timeline: { start: number; hours: number[]; blocks: number[] }
-  pending_approvals: number; recent_blocks: EventRow[]; default_password?: boolean
+  pending_approvals: number; recent_blocks: EventRow[]; default_password?: boolean; demo_code_active?: boolean
 }
 export type Otherwise = 'allow' | 'ask' | 'block' | 'judge'
 export interface ProfileData {

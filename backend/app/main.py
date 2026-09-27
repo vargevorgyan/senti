@@ -23,7 +23,32 @@ async def lifespan(app: FastAPI):
         seed(db)
     private_key()  # create the signing key on first run
     bus.loop = asyncio.get_running_loop()
+    warm = asyncio.create_task(_warm_corporate_model())
     yield
+    warm.cancel()
+
+
+async def _warm_corporate_model() -> None:
+    """Load the corporate model into memory at startup so the first real verdict isn't a cold-start timeout."""
+    import httpx
+
+    from .routers.device import corp_config
+    await asyncio.sleep(2)
+    with SessionLocal() as db:
+        cfg = corp_config(db)
+    if not cfg.get("enabled", True):
+        return
+    for _ in range(20):
+        try:
+            async with httpx.AsyncClient(timeout=120) as c:
+                r = await c.post(cfg["url"].rstrip("/") + "/chat/completions",
+                                 headers={"Authorization": f"Bearer {cfg['api_key']}"} if cfg.get("api_key") else {},
+                                 json={"model": cfg["model"], "messages": [{"role": "user", "content": "ok"}], "max_tokens": 1})
+                if r.status_code == 200:
+                    return
+        except Exception:
+            pass
+        await asyncio.sleep(15)
 
 
 app = FastAPI(title="Senti org backend", version="0.2.0", lifespan=lifespan)

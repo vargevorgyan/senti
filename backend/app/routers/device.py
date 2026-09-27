@@ -17,7 +17,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import KV, Approval, Device, EnrollmentCode, Event, Profile, User
 from ..security import current_device, new_device_token
-from ..signing import public_key_b64
+from ..signing import public_key_b64, sign
 
 router = APIRouter(prefix="/api/v1")
 
@@ -135,6 +135,7 @@ def _event_json(e: Event, dev: Device | None = None) -> dict:
 
 
 class JudgeIn(BaseModel):
+    nonce: str = ""
     profile_id: str = ""
     task: str = ""
     action: dict[str, Any]
@@ -155,7 +156,8 @@ async def judge(body: JudgeIn, dev: Device = Depends(current_device), db: Sessio
     prof = db.get(Profile, body.profile_id) if body.profile_id else None
     instructions = ((prof.data.get("judge") or {}).get("instructions", "") if prof else "")
     try:
-        return await corporate.judge(cfg, body.task, body.action, body.content, instructions, body.facts, settings.corp_timeout_s)
+        out = await corporate.judge(cfg, body.task, body.action, body.content, instructions, body.facts, settings.corp_timeout_s)
+        return {**out, "signed": sign({**out, "nonce": body.nonce, "device_id": dev.id})}
     except Exception as e:
         raise HTTPException(502, f"corporate model unavailable: {type(e).__name__}: {str(e)[:200]}")
 
@@ -188,14 +190,15 @@ def approval_json(a: Approval, dev: Device | None = None) -> dict:
 
 
 @router.get("/approvals/{aid}")
-def get_approval(aid: str, dev: Device = Depends(current_device), db: Session = Depends(get_db)):
+def get_approval(aid: str, nonce: str = "", dev: Device = Depends(current_device), db: Session = Depends(get_db)):
     a = db.get(Approval, aid)
     if a is None or a.device_id != dev.id:
         raise HTTPException(404, "not found")
     if a.status == "pending" and time.time() - a.created_at > 900:
         a.status, a.decided_by = "expired", "timeout"
         db.commit()
-    return approval_json(a)
+    j = approval_json(a)
+    return {**j, "signed": sign({"id": a.id, "status": a.status, "decided_by": a.decided_by, "nonce": nonce, "device_id": dev.id})}
 
 
 @router.get("/public-key")

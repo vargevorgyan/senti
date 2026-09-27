@@ -188,3 +188,30 @@ def test_bad_event_does_not_poison_batch(client, admin_headers, device):
     r = client.post("/api/v1/events", headers=device["headers"], json={"events": [
         {"id": "bad1", "ts": "not-a-number", "input": "x"}, {"id": "good1", "verdict": "allow"}]})
     assert r.status_code == 200 and r.json()["stored"] == 2
+
+
+def test_demo_code_off_by_default(tmp_path, monkeypatch):
+    import importlib, sys
+    monkeypatch.setenv("SENTI_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("SENTI_DEMO_ENROLL_CODE", raising=False)
+    for m in [m for m in list(sys.modules) if m == "app" or m.startswith("app.")]:
+        del sys.modules[m]
+    from fastapi.testclient import TestClient
+    main = importlib.import_module("app.main")
+    with TestClient(main.app) as c:
+        assert c.post("/api/v1/devices/enroll", json={"code": "SENTI-DEMO", "user_email": "x@y.z"}).status_code == 403
+
+
+def test_signed_judge_and_approval_responses(client, admin_headers, device, monkeypatch):
+    from app import corporate
+    async def fake(cfg, task, action, content, instructions, facts, timeout=25, allow_threshold=0.6):
+        return {"verdict": "allow", "reason": "ok", "p": {"allow": 1.0}, "model": "m", "ms": 1}
+    monkeypatch.setattr(corporate, "judge", fake)
+    r = client.post("/api/v1/judge", headers=device["headers"], json={"action": {"tool": "Bash"}, "nonce": "n1"}).json()
+    body = verify(r["signed"], device["public_key"])
+    assert body["verdict"] == "allow" and body["nonce"] == "n1"
+    aid = client.post("/api/v1/approvals", headers=device["headers"], json={"agent": "codex", "tool": "Bash", "summary": "x"}).json()["id"]
+    client.post(f"/api/v1/admin/approvals/{aid}/decide", headers=admin_headers, json={"decision": "approve"})
+    r = client.get(f"/api/v1/approvals/{aid}?nonce=n2", headers=device["headers"]).json()
+    body = verify(r["signed"], device["public_key"])
+    assert body["status"] == "approved" and body["id"] == aid and body["nonce"] == "n2"

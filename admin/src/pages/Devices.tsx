@@ -12,7 +12,7 @@ export default function Devices() {
   useLiveEvent(m => { if (m.type === 'device_enrolled') { devices.reload(); codes.reload() } })
   const { data: tls } = useLoad<{ enabled: boolean; https_port: number; fingerprint?: string }>(() => api('/admin/tls'))
   const backend = tls?.enabled ? `https://${window.location.hostname}:${tls.https_port}` : `${window.location.protocol}//${window.location.host}`
-  const code = codes.data?.[0]?.code ?? 'SENTI-DEMO'
+  const code = codes.data?.[0]?.code ?? '<create a code below>'
   const cmd = `senti enroll --backend ${backend}${tls?.fingerprint ? ` --fingerprint ${tls.fingerprint}` : ''} --code ${code} --email you@company.com`
   const copy = (t: string) => navigator.clipboard.writeText(t).then(() => toast('Copied.'))
   const newCode = async () => {

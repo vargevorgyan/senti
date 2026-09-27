@@ -8,6 +8,7 @@ import pytest
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTI_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SENTI_DEMO_ENROLL_CODE", "SENTI-DEMO")
     for m in [m for m in list(sys.modules) if m == "app" or m.startswith("app.")]:
         del sys.modules[m]
     from fastapi.testclient import TestClient

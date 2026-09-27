@@ -65,7 +65,8 @@ Legend: [x] done · [~] partial · [ ] todo
 - [x] 20 findings from an adversarial review; all high and most medium fixed with regression tests — see `.okf/research/security-review-2026-09-27.md`
 - [x] JWT revocation + SSE tickets, TLS by default with certificate pinning, peer-process verification (done 2026-09-27)
 - [x] Second review (/code-review max): 15 main + ~20 minor findings fixed — `engine/tests/test_review2.py`
-- [ ] Open: `github.com` WebFetch trust; hook.token readable by uninspected same-user code; judge over-blocking some asks
+- [x] Review leftovers: git exec keys/globals, Grep content over secrets, demo code off by default, signed judge/approval answers, allowlist cwd
+- [ ] Open: `github.com` WebFetch trust; hook.token readable by uninspected same-user code; judge over-blocking some asks; `cat .env` decided by the judge (by design)
 
 ### Infra / QA / docs
 - [x] docker-compose (backend, admin, ollama + model pull, healthchecks), `.env.example`
@@ -104,3 +105,4 @@ cd admin && npx playwright test
 - 2026-09-27: Engine, backend, admin panel, Docker stack built; all judge modes verified end to end (14/14); real Claude Code, Codex, OpenCode sessions pass through Senti; simulation 22/22 dangerous stopped; docs and `.okf` updated.
 - 2026-09-27: Security review fixes (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, bundle binding, backend spoofing, default-password warning). Claude Code built-in sandbox via `install --sandbox`; `network.ask` rules.
 - 2026-09-27: Remaining items done — JWT revocation/SSE tickets, TLS + pinning, peer-process verification, required sandbox, secret brokering, model gateway; second review (15+ findings) fixed. Engine 161 tests, backend 22, Playwright 7, e2e 14/14.
+- 2026-09-27: Review leftovers fixed (see security review, third pass). Engine 175 tests, backend 24, Playwright 7, e2e 14/14.

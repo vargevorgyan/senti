@@ -62,7 +62,7 @@ class Engine:
             self.local.state, self.local.error = "unavailable", "local judge disabled"
         from .config import tls_verify
         self.remote = RemoteJudge(self.settings.backend_url, self.settings.device_token, self.settings.judge_timeout_s,
-                                  tls_verify(self.settings)) \
+                                  tls_verify(self.settings), self.settings.backend_public_key, self.settings.device_id) \
             if self.settings.enrolled else None
 
     # ------------------------------------------------------------------ helpers
@@ -87,7 +87,8 @@ class Engine:
 
     @staticmethod
     def action_key(a: Action, project: str) -> str:
-        return hashlib.sha256(json.dumps([project, a.agent, a.tool, a.input], sort_keys=True, default=str).encode()).hexdigest()
+        return hashlib.sha256(json.dumps([project, os.path.abspath(a.cwd or project), a.agent, a.tool, a.input], sort_keys=True,
+                                         default=str).encode()).hexdigest()
 
     def status(self) -> dict:
         return {

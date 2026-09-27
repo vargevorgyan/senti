@@ -40,7 +40,8 @@ docker compose up -d --build    # first start pulls the corporate model (~2 GB)
 
 - Admin panel and device API: <https://localhost:8443> (self-signed certificate) — `admin@senti.local` / `senti-admin`; the panel
   warns until you change the password. Ports bind to 127.0.0.1 unless `SENTI_BIND=0.0.0.0`.
-- Demo enrollment code `SENTI-DEMO`; the **Devices** page shows the exact enroll command including the certificate fingerprint.
+- Create an enrollment code on the **Devices** page; it shows the exact enroll command including the certificate fingerprint.
+  (For demos you can set `SENTI_DEMO_ENROLL_CODE=SENTI-DEMO` in `.env`: 20 uses, 7 days.)
 
 ### 2. Each Mac (Apple Silicon)
 
@@ -50,7 +51,7 @@ Requires [uv](https://docs.astral.sh/uv/), Xcode command line tools (for the Swi
 cd engine
 uv sync --extra mlx                    # without --extra mlx: rules + corporate judge only
 uv run senti start                     # first start downloads Qwen3-4B (~2.3 GB) in the background
-uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256 from the Devices page> --code SENTI-DEMO --email you@acme.test
+uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256> --code <code> --email you@acme.test   # command shown on the Devices page
 uv run senti stop && uv run senti start
 uv run senti install all               # Claude Code, Codex, OpenCode (user-wide); or --project DIR
 uv run senti status

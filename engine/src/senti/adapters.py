@@ -56,6 +56,10 @@ def parse(agent: str, ev: dict) -> Action:
                   "workdir": "workdir"}.get(k, k)
             inp[nk] = v
         cwd = inp.get("workdir") or ev.get("cwd") or ev.get("directory") or os.getcwd()
+        if tool == "Grep":
+            inp.setdefault("output_mode", "content")  # OpenCode's grep returns matching lines
+            if inp.get("include"):
+                inp.setdefault("glob", inp["include"])
         if tool not in OPENCODE_TOOLS.values() and "_" in tool_raw and tool_raw not in OPENCODE_TOOLS:
             server, _, name = tool_raw.partition("_")
             tool = f"mcp__{server}__{name}"

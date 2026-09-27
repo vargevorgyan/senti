@@ -175,3 +175,40 @@ def test_agent_own_notes(project):
     p = os.path.join(home, ".claude", "projects", "-tmp-x", "memory", "MEMORY.md")
     assert check_action("Read", {"file_path": p}, project, project)[0].verdict == "allow"
     assert check_action("Write", {"file_path": os.path.join(home, ".claude", "settings.json"), "content": "{}"}, project, project)[0].verdict == "block"
+
+
+# ---- leftovers from the review (2026-09-27, second pass)
+@pytest.mark.parametrize("cmd", ["git -c diff.external=./x.sh diff", "git -c merge.x.driver=./x.sh merge a", "git -c pager.log=./x log",
+                                 "git -c difftool.x.cmd=./x difftool", "git --config-env=core.pager=EVIL log",
+                                 "git -c gpg.ssh.program=./x commit -S -m x", "git config diff.external ./x.sh"])
+def test_git_exec_keys(cmd, project):
+    assert verdict(cmd, project)[0] != "allow", cmd
+
+
+@pytest.mark.parametrize("cmd", ["git --namespace foo push origin main", "git --super-prefix x/ push", "git --attr-source HEAD push"])
+def test_git_global_options_with_values(cmd):
+    p = {**PERSONAL_PROFILE, "rules": {**PERSONAL_PROFILE["rules"], "shell": {"deny": ["git push*"], "otherwise": "judge"}}}
+    d, _ = evaluate(p, Action("claude", "Bash", {"command": cmd}, "/tmp"), {}, "/tmp")
+    assert d and d.verdict == "block", cmd
+
+
+def test_grep_content_over_secrets(project):
+    open(os.path.join(project, ".env"), "w").write("K=1")
+    d, _ = check_action("Grep", {"pattern": "K", "path": project, "output_mode": "content"}, project, project)
+    assert d is None or d.verdict != "allow"
+    d, _ = check_action("Grep", {"pattern": "K", "path": project, "output_mode": "files_with_matches"}, project, project)
+    assert d.verdict == "allow"
+    d, _ = check_action("Grep", {"pattern": "K", "path": project, "output_mode": "content", "glob": "*.py"}, project, project)
+    assert d.verdict == "allow"
+
+
+def test_opencode_grep_is_content():
+    a = adapters.parse("opencode", {"event": "pre", "tool": "grep", "args": {"pattern": "K"}, "cwd": "/tmp"})
+    assert a.input.get("output_mode") == "content"
+
+
+async def test_allowlist_key_includes_cwd(project):
+    e = Engine(Settings(local_judge=False), use_llm=False)
+    a1 = Action("claude", "Bash", {"command": "make x"}, project, "s")
+    a2 = Action("claude", "Bash", {"command": "make x"}, os.path.join(project, "sub"), "s")
+    assert e.action_key(a1, project) != e.action_key(a2, project)

@@ -101,9 +101,10 @@ def _normalised_segments(cmd: str) -> list[str]:
             if not prog:
                 continue
             if prog == "git":
+                from .rules import GIT_VALUE_GLOBALS
                 i = 0
                 while i < len(args) and args[i].startswith("-"):
-                    i += 2 if args[i] in {"-C", "-c", "--git-dir", "--work-tree"} else 1
+                    i += 2 if args[i] in GIT_VALUE_GLOBALS else 1
                 args = args[i:]
             out.append(" ".join([prog, *args]))
     return out

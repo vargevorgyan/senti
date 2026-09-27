@@ -164,13 +164,20 @@ async def request_approval(s: Settings, a: Action, d: Decision, profile: dict, t
             r = await c.post(s.backend_url + "/api/v1/approvals", headers=_headers(s), json=body)
             r.raise_for_status()
             aid = r.json()["id"]
+            import secrets as _sec
+            from .judge.remote import verified_payload
             while time.time() < deadline:
                 await asyncio.sleep(1.5)
-                r = await c.get(f"{s.backend_url}/api/v1/approvals/{aid}", headers=_headers(s))
+                nonce = _sec.token_urlsafe(12)
+                r = await c.get(f"{s.backend_url}/api/v1/approvals/{aid}", headers=_headers(s), params={"nonce": nonce})
                 if r.status_code == 200:
-                    st = r.json()
+                    st = verified_payload(r.json(), s.backend_public_key, nonce, s.device_id)  # unsigned/forged → exception → block
+                    if st.get("id") != aid:
+                        return "block", "approval response for another request"
                     if st["status"] in {"approved", "denied"}:
                         return ("allow" if st["status"] == "approved" else "block"), st.get("decided_by") or "admin"
+                    if st["status"] == "expired":
+                        return "block", "request expired"
         return "block", "no decision in time"
     except Exception as e:
         return "block", f"approval service unreachable: {type(e).__name__}"

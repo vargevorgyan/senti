@@ -31,6 +31,9 @@ export default function Overview() {
           <div><h3>Change the default admin password</h3><p>This panel still uses the password it shipped with. Use “Change password” at the bottom of the sidebar before anyone else can reach it.</p></div>
         </div>
       )}
+      {o.demo_code_active && (
+        <div className="al info" role="status"><p>The shared demo enrollment code is active. Anyone who knows it can enroll a Mac; delete it on the Devices page when the demo is over.</p></div>
+      )}
       <section className="watch">
         <div>
           {quiet ? (

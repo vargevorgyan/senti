@@ -90,7 +90,9 @@ deterministically, and both judge prompts now say policy notes override the mode
   pins that exact certificate and refuses plain HTTP to non-local backends (`--insecure-http` for labs).
 - **Admin sessions:** JWTs carry a token version; changing the password or "Sign out everywhere" revokes all sessions. The SSE stream
   uses a 60-second single-purpose ticket, never the session token.
-- **Enrollment:** a second Mac for an existing person needs a personal code (bound to their email); codes decrement atomically;
+- **Signed answers:** corporate judge verdicts and approval statuses carry an Ed25519 signature over the answer, a per-request
+  nonce and the device id; the engine rejects unsigned, replayed or misdirected answers (fail closed).
+- **Enrollment:** the shared demo code is off unless `SENTI_DEMO_ENROLL_CODE` is set; a second Mac for an existing person needs a personal code (bound to their email); codes decrement atomically;
   deleted people are retired (address freed, devices revoked, audit kept).
 
 # Security

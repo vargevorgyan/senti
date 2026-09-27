@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     admin_email: str = "admin@senti.local"
     admin_password: str = "senti-admin"
     org_name: str = "Acme Corp"
-    demo_enroll_code: str = "SENTI-DEMO"
+    demo_enroll_code: str = ""  # set SENTI_DEMO_ENROLL_CODE for demos only (20 uses, 7 days)
     cors_origins: str = "http://localhost:8080,http://localhost:5173"
     # corporate model (OpenAI-compatible chat completions endpoint, e.g. Ollama)
     corp_model_url: str = "http://localhost:11434/v1"

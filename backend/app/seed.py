@@ -96,7 +96,9 @@ def seed(db: Session) -> None:
         if not db.get(Profile, pid):
             db.add(Profile(id=pid, name=name, description=desc, priority=prio, data=copy.deepcopy(data)))
     if settings.demo_enroll_code and not db.get(EnrollmentCode, settings.demo_enroll_code):
-        db.add(EnrollmentCode(code=settings.demo_enroll_code, role_id="engineering", uses_left=1000, note="demo code"))
+        import time as _t
+        db.add(EnrollmentCode(code=settings.demo_enroll_code, role_id="engineering", uses_left=20, expires_at=_t.time() + 7 * 86400,
+                              note="demo code (SENTI_DEMO_ENROLL_CODE)"))
     if not db.get(KV, "corporate_model"):
         db.add(KV(key="corporate_model", value={"url": settings.corp_model_url, "model": settings.corp_model,
                                                 "api_key": settings.corp_model_api_key, "enabled": True}))

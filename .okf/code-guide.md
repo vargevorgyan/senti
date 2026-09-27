@@ -61,8 +61,8 @@ uv run senti install all               # or --project DIR for one repo
 # Tests
 
 ```bash
-cd engine && uv run pytest -q          # 161 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
-cd backend && uv run pytest -q         # 22 API tests
+cd engine && uv run pytest -q          # 175 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
+cd backend && uv run pytest -q         # 24 API tests
 cd admin && npx playwright test        # 7 browser tests against the running stack
 SENTI_SOCKET=... uv run --project engine python scripts/e2e_modes.py   # 14 live checks
 ```

@@ -17,6 +17,8 @@ services:
       SENTI_CORP_MODEL_URL: ${SENTI_CORP_MODEL_URL:-http://ollama:11434/v1}
       SENTI_CORP_MODEL: ${SENTI_CORP_MODEL:-qwen2.5:3b}
       SENTI_CORS_ORIGINS: ${SENTI_CORS_ORIGINS:-http://localhost:8080}
+      # shared demo code, off unless set (20 uses, 7 days); real Macs use codes from the Devices page
+      SENTI_DEMO_ENROLL_CODE: ${SENTI_DEMO_ENROLL_CODE:-}
       SENTI_TLS_CERT: /tls/cert.pem
       SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
     volumes:

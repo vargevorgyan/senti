@@ -224,3 +224,18 @@ def test_install_claude_with_sandbox(tmp_path):
     assert cfg["sandbox"]["network"]["allowUnixSockets"] and cfg["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith("claude pre")
     installers.uninstall_claude(str(tmp_path))
     assert "PreToolUse" not in json.loads(p.read_text()).get("hooks", {})
+
+
+def test_remote_responses_must_be_signed():
+    import base64, json as _j, pytest as _p
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from senti.judge.remote import verified_payload
+    k = Ed25519PrivateKey.generate()
+    pub = base64.b64encode(k.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode()
+    body = _j.dumps({"verdict": "allow", "nonce": "n", "device_id": "d"})
+    ok = {"signed": {"payload": body, "signature": base64.b64encode(k.sign(body.encode())).decode()}}
+    assert verified_payload(ok, pub, "n", "d")["verdict"] == "allow"
+    for bad, nonce in (({"verdict": "allow"}, "n"), (ok, "other-nonce")):
+        with _p.raises(Exception):
+            verified_payload(bad, pub, nonce, "d")
