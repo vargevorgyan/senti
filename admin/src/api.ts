@@ -11,6 +11,12 @@ export interface Overview {
   by_verdict: Record<Verdict, number>; by_agent: Record<string, number>; by_layer: Record<string, number>; llm_share: number
   latency_ms: { p50: number; p95: number }; top_rules: [string, number][]; timeline: { start: number; hours: number[]; blocks: number[] }
   pending_approvals: number; recent_blocks: EventRow[]; default_password?: boolean; demo_code_active?: boolean
+  gateway?: GatewayOverview
+}
+export interface GatewayOverview {
+  calls_24h: number; allowed: number; blocked: number; by_layer: Record<string, number>; by_agent: Record<string, number>
+  latency_ms: { p50: number; p95: number }; timeline: { start: number; hours: number[]; blocks: number[] }
+  recent_blocks: { id: number; ts: number; agent: string; role: string; tool: string; target: string; layer: string; reason: string }[]
 }
 export type Otherwise = 'allow' | 'ask' | 'block' | 'judge'
 export interface ProfileData {

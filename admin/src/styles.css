@@ -282,3 +282,11 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
 .rulelist .chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; border: none; background: none; padding: 0; min-height: 0; }
 .rulelist code { font-size: 13px; line-height: 18px; padding: 2px 8px; border-radius: var(--radius-sm, 6px); background: var(--surface); border: 1px solid var(--line); overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
 .grid3 > .panel { min-width: 0; }
+
+/* Overview: server gateway panel */
+.gwfacts { margin: 0; }
+.gwblocks { display: flex; flex-direction: column; gap: 8px; }
+.gwblocks h3 { margin: 0; }
+.gwrow { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+.gwwhat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gwwhat code { overflow-wrap: anywhere; }

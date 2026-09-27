@@ -20,7 +20,7 @@ from ..bundle import bump, profile_doc, resolve
 from ..bus import bus, sse
 from ..config import settings
 from ..db import get_db
-from ..models import KV, Admin, Approval, ChangeLog, Device, EnrollmentCode, Event, Invite, Profile, Role, User
+from ..models import KV, Admin, Approval, ChangeLog, Device, EnrollmentCode, Event, GatewayEvent, Invite, Profile, Role, User
 from ..seed import BASE_FEATURES
 from .device import _event_json, approval_json, corp_config
 
@@ -128,6 +128,7 @@ def overview(admin: Admin = Auth, db: Session = Depends(get_db)):
     ms = sorted(e.ms for e in evs if e.ms)
     from ..security import check_password
     return {
+        "gateway": _gateway_overview(db, since),
         "org": settings.org_name,
         "default_password": check_password("senti-admin", admin.password_hash),
         "demo_code_active": bool(settings.demo_enroll_code and (c := db.get(EnrollmentCode, settings.demo_enroll_code))
@@ -145,6 +146,31 @@ def overview(admin: Admin = Auth, db: Session = Depends(get_db)):
         "timeline": {"start": since, "hours": hours, "blocks": blocks},
         "pending_approvals": db.query(func.count(Approval.id)).filter_by(status="pending").scalar(),
         "recent_blocks": [_event_json(e) for e in recent_blocks],
+    }
+
+
+def _gateway_overview(db: Session, since: float) -> dict:
+    """The server gateway's last 24 hours: agents' calls on the company server (separate from the Macs' hook events)."""
+    evs = db.query(GatewayEvent).filter(GatewayEvent.ts >= since).all()
+    hours, blocks = [0] * 24, [0] * 24
+    for e in evs:
+        i = min(23, max(0, int((e.ts - since) // 3600)))
+        hours[i] += 1
+        if e.verdict != "allow":
+            blocks[i] += 1
+    ms = sorted(e.ms for e in evs if e.ms)
+    recent = db.query(GatewayEvent).filter(GatewayEvent.verdict != "allow").order_by(GatewayEvent.ts.desc()).limit(5).all()
+    return {
+        "calls_24h": len(evs),
+        "allowed": sum(1 for e in evs if e.verdict == "allow"),
+        "blocked": sum(1 for e in evs if e.verdict != "allow"),
+        # which layer decided: fixed hard rules, the role's rules, or the supervisor model
+        "by_layer": dict(Counter(e.layer or "?" for e in evs).most_common()),
+        "by_agent": dict(Counter(e.agent_name or e.agent_id for e in evs).most_common(8)),
+        "latency_ms": {"p50": ms[len(ms) // 2] if ms else 0, "p95": ms[int(len(ms) * 0.95)] if ms else 0},
+        "timeline": {"start": since, "hours": hours, "blocks": blocks},
+        "recent_blocks": [{"id": e.id, "ts": e.ts, "agent": e.agent_name, "role": e.role, "tool": e.tool,
+                           "target": e.target[:300], "layer": e.layer, "reason": e.reason[:300]} for e in recent],
     }
 
 

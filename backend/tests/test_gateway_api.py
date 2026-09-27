@@ -228,3 +228,13 @@ def test_compile_with_an_unreachable_model_says_so(client, admin_headers, monkey
     monkeypatch.setattr(config.settings, "policy_model_url", "http://127.0.0.1:9/v1")
     r = client.post("/api/v1/admin/gateway/policy/compile", headers=admin_headers, json={"text": POLICY_TEXT})
     assert r.status_code == 503 and "Can't reach the AI model at http://127.0.0.1:9/v1" in r.json()["detail"]
+
+
+def test_overview_includes_the_server_gateway(client, admin_headers, gw):
+    t = gw["agent"]["token"]
+    call(client, t, "read_file", path="tickets/1.md")
+    call(client, t, "read_file", path="payments/cards.csv")
+    g = client.get("/api/v1/admin/overview", headers=admin_headers).json()["gateway"]
+    assert g["calls_24h"] == 2 and g["allowed"] == 1 and g["blocked"] == 1
+    assert g["by_agent"] == {"helpdesk-bot": 2} and sum(g["timeline"]["hours"]) == 2
+    assert g["recent_blocks"][0]["target"] == "payments/cards.csv" and g["recent_blocks"][0]["reason"]
