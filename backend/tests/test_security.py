@@ -268,6 +268,8 @@ def test_public_tls_behind_a_proxy_skips_the_own_ca(client, admin_headers, tmp_p
     assert inv["link"] == f"https://senti.acme.test/join#s=senti.acme.test&k={inv['key']}"
     assert inv["install_command"] == f"curl -fsSL https://senti.acme.test/install.sh | sh -s -- '{inv['link']}'"
     assert "--fingerprint" not in inv["setup_command"]
+    # the public join page offers this server's own installer too
+    assert client.get("/api/v1/installer").json()["url"] == "/install.sh"
 
 
 # ---------------------------------------------------------------- the gateway runner

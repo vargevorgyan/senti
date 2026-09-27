@@ -252,3 +252,14 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
   .login .art { min-height: 260px; }
   .login .art h1 { font-size: 64px; line-height: 64px; }
 }
+
+/* Corporate judge: where the AI runs */
+.modes.modes3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.modelist { display: grid; gap: 6px; }
+.modelrow { display: flex; align-items: center; gap: var(--space-3); padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.modelrow input[type="radio"] { accent-color: var(--ink); margin: 0; }
+.modelrow .grow { flex: 1; min-width: 0; }
+.btn.sm { padding: 5px 10px; font-size: 13px; }
+.bar { height: 6px; border-radius: 3px; background: var(--sand); overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; background: var(--sage); transition: width .4s; }
+@media (max-width: 900px) { .modes.modes3 { grid-template-columns: 1fr; } .modelrow { flex-wrap: wrap; } }

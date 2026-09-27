@@ -495,8 +495,8 @@ code { font: 0.9em var(--mono); background: rgba(239, 232, 218, 0.08); padding: 
 .cta__glow { position: absolute; inset: 0; z-index: -1; background: radial-gradient(60% 80% at 50% 120%, #ffd98a, transparent 70%), radial-gradient(40% 60% at 0% 0%, #e79a1f, transparent 70%); }
 .cta__title { margin: 0; font: 800 clamp(3.4rem, 11vw, 10rem)/0.92 var(--display); letter-spacing: -0.045em; }
 .cta__lede { margin: 1.4rem 0 0; font-size: clamp(1.05rem, 1.5vw, 1.3rem); max-width: 34rem; color: rgba(26, 20, 5, 0.78); }
-.install { position: relative; margin-top: 2.6rem; width: min(640px, 100%); text-align: left; }
-.install__code { margin: 0; padding: 1.4rem 1.5rem; padding-right: 6.5rem; border-radius: var(--r-m); background: var(--night); color: var(--bone); font: 400 clamp(0.85rem, 1.5vw, 1rem)/1.8 var(--mono); overflow-x: auto; white-space: pre; }
+.install { position: relative; margin-top: 2.6rem; width: min(920px, 100%); text-align: left; }
+.install__code { margin: 0; padding: 1.4rem 1.5rem; padding-right: 6.5rem; border-radius: var(--r-m); background: var(--night); color: var(--bone); font: 400 clamp(0.78rem, 1.2vw, 0.92rem)/1.8 var(--mono); overflow-x: auto; white-space: pre; }
 .install__copy { position: absolute; top: 0.9rem; right: 0.9rem; }
 .cta__teams { margin: 2rem 0 0; font-size: 0.975rem; color: rgba(26, 20, 5, 0.75); max-width: 36rem; }
 .cta__teams code { background: rgba(26, 20, 5, 0.1); }

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import corporate
+from .. import corporate, local_model
 from ..bundle import bump, profile_doc, resolve
 from ..bus import bus, sse
 from ..config import settings
@@ -601,16 +601,24 @@ def decide_approval(aid: str, body: DecisionIn, admin: Admin = Auth, db: Session
 
 # ---------------------------------------------------------------- settings: corporate model
 class CorpIn(BaseModel):
-    url: str
+    url: str = ""
     model: str
     api_key: str | None = None
     enabled: bool = True
+    # where the model runs: "local" = the private model on this server (its address is fixed), "api" = a cloud or
+    # company API at `url`. Older clients send only url, which is treated as "api" unless it is the local address.
+    kind: Literal["local", "api"] | None = None
+
+
+def _corp_kind(c: dict) -> str:
+    return c.get("kind") or ("local" if local_model.is_local(c.get("url", "")) else "api")
 
 
 @router.get("/settings/corporate-model")
 def get_corp(admin: Admin = Auth, db: Session = Depends(get_db)):
     c = dict(corp_config(db))
     c["api_key_set"] = bool(c.pop("api_key", ""))
+    c["kind"] = _corp_kind(c)
     return c
 
 
@@ -618,8 +626,15 @@ def get_corp(admin: Admin = Auth, db: Session = Depends(get_db)):
 def put_corp(body: CorpIn, admin: Admin = Auth, db: Session = Depends(get_db)):
     kv = db.get(KV, "corporate_model")
     cur = dict(kv.value) if kv else {}
-    new = {"url": body.url.strip(), "model": body.model.strip(), "enabled": body.enabled,
-           "api_key": cur.get("api_key", "") if body.api_key is None else body.api_key}
+    kind = body.kind or ("local" if local_model.is_local(body.url) else "api")
+    url = local_model.base_url() + "/v1" if kind == "local" else body.url.strip()
+    if kind == "api" and not re.fullmatch(r"https?://[^\s/]+(/\S*)?", url):
+        raise HTTPException(422, "the API address must start with https:// (for example https://openrouter.ai/api/v1)")
+    if not body.model.strip():
+        raise HTTPException(422, "choose a model")
+    new = {"url": url, "model": body.model.strip(), "enabled": body.enabled, "kind": kind,
+           # the local model needs no key; switching to it forgets a cloud key rather than sending it anywhere
+           "api_key": "" if kind == "local" else (cur.get("api_key", "") if body.api_key is None else body.api_key)}
     if kv:
         kv.value = new
     else:
@@ -627,6 +642,32 @@ def put_corp(body: CorpIn, admin: Admin = Auth, db: Session = Depends(get_db)):
     db.add(ChangeLog(actor=admin.email, action="settings.corporate_model", target=new["model"], detail={"url": new["url"]}))
     db.commit()
     return {**{k: v for k, v in new.items() if k != "api_key"}, "api_key_set": bool(new["api_key"])}
+
+
+@router.get("/corporate-model/local")
+async def local_status(admin: Admin = Auth):
+    """The private model on this server: running or not, downloaded models, memory, a download in progress."""
+    return await local_model.status()
+
+
+class PullIn(BaseModel):
+    model: str
+
+
+@router.post("/corporate-model/local/pull", status_code=202)
+async def local_pull(body: PullIn, admin: Admin = Auth, db: Session = Depends(get_db)):
+    st = await local_model.status()
+    if not st["running"]:
+        raise HTTPException(409, "the model service isn't running on this server; start it with ./senti-server install --ai local")
+    try:
+        out = local_model.start_pull(body.model.strip())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    db.add(ChangeLog(actor=admin.email, action="settings.local_model.pull", target=body.model.strip()))
+    db.commit()
+    return out
 
 
 class PlaygroundIn(BaseModel):
@@ -659,9 +700,11 @@ async def corp_status(admin: Admin = Auth, db: Session = Depends(get_db)):
                             headers={"Authorization": f"Bearer {cfg['api_key']}"} if cfg.get("api_key") else {})
             r.raise_for_status()
             models = [m.get("id") for m in r.json().get("data", [])]
-        return {"reachable": True, "models": models, "model_present": cfg["model"] in models, "enabled": cfg.get("enabled", True)}
+        return {"reachable": True, "models": models, "model_present": cfg["model"] in models, "enabled": cfg.get("enabled", True),
+                "kind": _corp_kind(cfg)}
     except Exception as e:
-        return {"reachable": False, "error": f"{type(e).__name__}: {str(e)[:200]}", "enabled": cfg.get("enabled", True)}
+        return {"reachable": False, "error": f"{type(e).__name__}: {str(e)[:200]}", "enabled": cfg.get("enabled", True),
+                "kind": _corp_kind(cfg)}
 
 
 # ---------------------------------------------------------------- change log

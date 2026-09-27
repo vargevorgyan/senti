@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     tls_ca: str = ""         # path to the organization's own TLS CA certificate (self-signed deployments)
     # corporate model (OpenAI-compatible chat completions endpoint, e.g. Ollama)
     corp_model_url: str = "http://localhost:11434/v1"
+    # the private model on this server (bundled Ollama container), offered as "On this server" in the admin panel
+    local_model_url: str = "http://ollama:11434/v1"
     corp_model: str = "qwen2.5:3b"
     corp_model_api_key: str = ""
     corp_model_enabled: bool = True  # false: no company AI yet; unclear actions are asked about or blocked

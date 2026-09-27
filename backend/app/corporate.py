@@ -78,6 +78,11 @@ async def judge(cfg: dict, task: str, action: dict, content: str | None, instruc
         data = r.json()
     choice = data["choices"][0]
     text = choice["message"].get("content") or ""
+    if not text.strip() and (choice["message"].get("reasoning") or choice.get("finish_reason") == "length"):
+        # a "thinking" model used its short answer budget on reasoning: fail safe, and say why
+        return {"verdict": "ask", "reason": "The model gave no answer (it spent it on step-by-step reasoning). Choose a model "
+                "without reasoning for the judge.", "p": {"ask": 1.0}, "model": cfg["model"],
+                "ms": round((time.perf_counter() - t0) * 1000)}
     m = re.search(r"\{.*\}", text, re.S)
     parsed = json.loads(m.group(0)) if m else {}
     verdict = str(parsed.get("verdict", "")).strip().lower()

@@ -294,12 +294,29 @@ print(<span class="c-str">"All 42 tests passed"</span>)
     <section class="cta" id="install">
       <div class="cta__glow" aria-hidden="true"></div>
       <h2 class="cta__title">Let the dog in.</h2>
+<<<<<<< Updated upstream
       <p class="cta__lede">Set it up once for the whole company. Your admin runs one command on a server; everyone else joins with the one line from their invite, and every AI agent they use is protected from then on.</p>
       <div class="install">
         <pre class="install__code" data-install>./senti-server</pre>
         <button class="btn btn--lamp btn--sm install__copy" type="button" data-copy>Copy</button>
       </div>
       <p class="cta__teams">It asks a few questions, starts the admin panel and prints its address. Invite people there: each person gets a link with their one-line setup. Works from the office or anywhere else.</p>
+=======
+      <p class="cta__lede">Set it up once on a company server. Everyone else pastes one line.</p>
+      <div class="install">
+        <pre class="install__code" data-install><span class="c-muted"># 1. On your server: admin panel, company AI, MCP gateway</span>
+./senti-server install
+
+<span class="c-muted"># 2. Each Mac: the line from their invite (no admin password)</span>
+curl -fsSL https://senti.your.co/install.sh | sh -s -- '&lt;invite link&gt;'
+
+<span class="c-muted"># 3. Bots and agents on the server gateway</span>
+claude mcp add --transport http senti-server \
+  https://senti.your.co/api/v1/mcp/ --header "Authorization: Bearer sag_…"</pre>
+        <button class="btn btn--lamp btn--sm install__copy" type="button" data-copy>Copy</button>
+      </div>
+      <p class="cta__teams">Works on any Linux or Mac server with Docker. The admin adds people on the People page and each gets a one-time invite link.</p>
+>>>>>>> Stashed changes
     </section>
   </main>
 

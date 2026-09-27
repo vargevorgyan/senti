@@ -10,8 +10,10 @@ import './styles.css'
 
 // Built for a sub-path (ADMIN_BASE=/admin/): send stray visits to it
 const base = import.meta.env.BASE_URL.replace(/\/$/, '')
-if (base && window.location.pathname !== '/join' && !window.location.pathname.startsWith(base)) window.location.replace(`${base}/`)
+// the public join page stays at /join (invite links point there) and needs no router
+const isJoin = window.location.pathname === '/join'
+if (base && !isJoin && !window.location.pathname.startsWith(base)) window.location.replace(`${base}/`)
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><BrowserRouter basename={base || undefined}><App /></BrowserRouter></StrictMode>,
+  <StrictMode>{isJoin ? <App /> : <BrowserRouter basename={base || undefined}><App /></BrowserRouter>}</StrictMode>,
 )

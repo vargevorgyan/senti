@@ -71,7 +71,8 @@ def invite_info(body: InviteInfoIn, request: Request, db: Session = Depends(get_
 @router.get("/installer")
 def installer():
     """For the public join page: where the Mac installer comes from (see settings.installer_url)."""
-    return {"url": settings.installer_url if _own_ca() else "/install.sh"}
+    # behind a publicly trusted certificate (SENTI_PUBLIC_TLS) this server serves its own installer, like any public server
+    return {"url": settings.installer_url if _own_ca() and not settings.public_tls else "/install.sh"}
 
 
 def _own_ca() -> bool:
