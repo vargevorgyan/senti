@@ -274,22 +274,23 @@ PKG_INSTALL = {"npm": {"install", "i", "add"}, "pnpm": {"add", "install", "i"}, 
                "cargo": {"add", "install"}, "brew": {"install"}, "npx": None, "pipx": {"install", "run"}}
 
 
-def split_segments(cmd: str) -> list[list[str]]:
-    lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>()")
+def split_segments(cmd: str) -> list[list[str]] | None:
+    """Split a shell command into simple-command segments. Newlines separate commands like ';'.
+    Returns None when the syntax can't be parsed (callers must then fail closed)."""
+    lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|<>()\n")
+    lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     segs, cur = [], []
     try:
         for tok in lexer:
-            if tok in {";", "&&", "||", "|", "&", "(", ")", "|&"}:
+            if tok and set(tok) <= set(";&|()\n"):
                 if cur:
                     segs.append(cur)
                 cur = []
-            elif set(tok) <= set("<>&|"):
-                cur.append(tok)
             else:
                 cur.append(tok)
     except ValueError:
-        return []
+        return None
     if cur:
         segs.append(cur)
     return segs
@@ -301,15 +302,73 @@ def substitutions(cmd: str) -> list[str]:
     return [s for s in out if s.strip()]
 
 
+WRAPPERS = {"sudo", "doas", "env", "nohup", "time", "command", "exec", "builtin", "nice", "timeout", "gtimeout", "caffeinate",
+            "stdbuf", "ionice", "chronic", "unbuffer", "arch", "taskpolicy", "watch", "script"}
+EXEC_ENV = re.compile(r"^(GIT_(PAGER|EDITOR|SSH|SSH_COMMAND|EXTERNAL_DIFF|ASKPASS|PROXY_COMMAND|EXEC_PATH|CONFIG\w*|TEMPLATE_DIR|DIR|"
+                      r"WORK_TREE|SEQUENCE_EDITOR)|DYLD_\w+|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|NODE_OPTIONS|NODE_PATH|PYTHONPATH|"
+                      r"PYTHONSTARTUP|PYTHONHOME|PYTHONINSPECT|PERL5OPT|PERL5LIB|PERLLIB|RUBYOPT|RUBYLIB|BASH_ENV|ENV|ZDOTDIR|"
+                      r"PROMPT_COMMAND|EDITOR|VISUAL|PAGER|MANPAGER|LESSOPEN|LESSCLOSE|SSH_ASKPASS|SUDO_ASKPASS|npm_config_\w+|"
+                      r"NPM_CONFIG_\w+|PIP_INDEX_URL|PIP_EXTRA_INDEX_URL|UV_INDEX_URL|UV_EXTRA_INDEX_URL|HTTPS?_PROXY|https?_proxy|"
+                      r"ALL_PROXY|CURL_HOME|WGETRC|GNUPGHOME|XDG_CONFIG_HOME|HOME|PATH|IFS)$")
+
+
 def program(seg: list[str]) -> tuple[str, list[str], bool]:
+    """Unwrap `VAR=… sudo -u x timeout 5 nice -n 3 prog args` → (prog, args, sudo)."""
     i, sudo = 0, False
-    while i < len(seg) and (re.match(r"^\w+=", seg[i]) or seg[i] in {"sudo", "env", "nohup", "time", "command", "exec", "doas"}):
-        if seg[i] in {"sudo", "doas"}:
-            sudo = True
-        i += 1
+    while i < len(seg):
+        tok = seg[i]
+        if re.match(r"^[A-Za-z_]\w*=", tok):
+            i += 1
+            continue
+        if tok in WRAPPERS:
+            if tok in {"sudo", "doas"}:
+                sudo = True
+            w = tok
+            i += 1
+            while i < len(seg):
+                t, prev = seg[i], seg[i - 1]
+                if t.startswith("-") or re.match(r"^\d+(\.\d+)?[smhd]?$", t) or (w == "env" and re.match(r"^[A-Za-z_]\w*=", t)) \
+                        or (w in {"sudo", "doas"} and prev in {"-u", "-g", "-U", "-C", "-h", "-p"}) \
+                        or (w == "stdbuf" and prev in {"-i", "-o", "-e"}):
+                    i += 1
+                    continue
+                break
+            continue
+        break
     if i >= len(seg):
         return "", [], sudo
     return os.path.basename(seg[i]), seg[i + 1:], sudo
+
+
+def exec_env_vars(seg: list[str]) -> list[str]:
+    """Environment assignments (prefix, `export`, `env`) that make programs run other code."""
+    out = []
+    for i, t in enumerate(seg):
+        m = re.match(r"^([A-Za-z_]\w*)=", t)
+        if m and EXEC_ENV.match(m.group(1)):
+            if i == 0 or re.match(r"^[A-Za-z_]\w*=", seg[i - 1]) or seg[0] in {"export", "declare", "typeset", "env", "set", "setenv",
+                                                                                    "launchctl"} or seg[i - 1] in WRAPPERS:
+                out.append(m.group(1))
+    return out
+
+
+def arg_to_path(a: str) -> str:
+    """`-F file=@.env` → .env, `-d@x` → x, `--output=f` → f, `@file` → file."""
+    if a.startswith("-") and "@" in a:
+        a = a.split("@", 1)[1]
+    elif "=" in a and not a.startswith(("/", "~", ".", "$")):
+        a = a.split("=", 1)[1]
+    return a.lstrip("@<")
+
+
+def expand_braces(p: str) -> list[str]:
+    m = re.search(r"\{([^{}]*,[^{}]*)\}", p)
+    if not m:
+        return [p]
+    out = []
+    for alt in m.group(1).split(","):
+        out += expand_braces(p[:m.start()] + alt + p[m.end():])
+    return out[:50]
 
 
 HARD_DENY_CMD = [
@@ -360,6 +419,9 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 facts[k] = facts[k] or f[k]
             facts["hosts"] += f["hosts"]
     segs = split_segments(cmd)
+    if segs is None:
+        return Decision("ask", "The command uses shell syntax I couldn't read, so I'm asking to be safe", "L1-rules", "unparsable",
+                        severity="warning"), facts
     if not segs:
         return (None, facts) if cmd.strip() else (Decision("allow", "Empty command", "L1-rules", "empty"), facts)
 
@@ -371,19 +433,25 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 facts[k] = True
 
     for seg in segs:
+        if exec_env_vars(seg):
+            facts["exec_env"] = sorted(set(facts.get("exec_env", []) + exec_env_vars(seg)))
+            all_safe = False
         prog, args, sudo = program(seg)
         if sudo:
             facts["sudo"] = True
             all_safe = False
         if not prog:
             continue
-        raw_paths = [a.lstrip("@").split("=", 1)[-1] for a in args
+        raw_paths = [arg_to_path(a) for a in args
                      if a.startswith(("/", "~", "./", "../", "$HOME", "@")) or ("/" in a and not re.match(r"^\w+://", a))
                      or re.search(r"\.env\b|id_rsa|credentials|\.pem$", a) or any(c in a for c in "*?[")
                      or (not a.startswith("-") and os.path.lexists(os.path.join(cwd, a)))]
         paths: list[str] = []
         for rp in raw_paths:
-            paths += expand_globs(expand(rp, cwd))
+            for b in expand_braces(rp):
+                paths += expand_globs(expand(b, cwd))
+        facts.setdefault("paths", [])
+        facts["paths"] += [p for p in paths if p != "/dev/null"]
         redirects = [expand(seg[i + 1], cwd) for i, t in enumerate(seg[:-1]) if t in {">", ">>", "<", "&>"}]
         writes = [expand(seg[i + 1], cwd) for i, t in enumerate(seg[:-1]) if t in {">", ">>", "&>"}]
         facts["writes"] += writes
@@ -424,8 +492,8 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
             continue
         if prog in NET_TOOLS:
             hosts, values = net_hosts(prog, args)
-            for v in values:  # flag values can be files (-d @file, -T file, --unix-socket path)
-                vp = expand(v.lstrip("@<"), cwd)
+            for v in values:  # flag values can be files (-d @file, -F f=@file, -T file, --unix-socket path)
+                vp = expand(arg_to_path(v), cwd)
                 k = classify_path(vp)
                 if k == "guard":
                     return Decision("block", "Talks to Senti's own control socket or files", "L1-rules", "guard_path",
@@ -462,7 +530,12 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
             subs = PKG_INSTALL[prog]
             first = next((a for a in args if not a.startswith("-")), "")
             if subs is None or first in subs:
-                rest = [a for a in args if not a.startswith("-")]
+                reg_flags = {"--registry", "-i", "--index-url", "--extra-index-url", "--index", "--find-links", "-f", "--source"}
+                if any(a in reg_flags or a.split("=", 1)[0] in reg_flags for a in args):
+                    facts["custom_registry"] = True
+                    all_safe = False
+                skip = {i + 1 for i, a in enumerate(args) if a in reg_flags}
+                rest = [a for i, a in enumerate(args) if not a.startswith("-") and i not in skip]
                 names = rest if subs is None else rest[1:]
                 if prog == "uv" and first == "pip":
                     names = rest[2:] if len(rest) > 1 and rest[1] == "install" else []
@@ -541,10 +614,11 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
             continue
         if prog in TEXT_TOOLS:
             script = " ".join(a for a in args if not a.startswith("-"))
-            if prog.endswith("awk") and re.search(r"system\s*\(|getline|\|\s*\"|\bprint[^;}]*>|\bprintf[^;}]*>|close\(", script):
+            if prog.endswith("awk") and (re.search(r"system\s*\(|getline|\|\s*\"|\bprint[^;}]*>|\bprintf[^;}]*>|close\(", script)
+                                         or any(a == "-f" or a.startswith("-f") for a in args)):
                 facts["unknown"].append(prog)
                 all_safe = False
-            elif prog.endswith("sed") and (any(a == "-i" or a.startswith(("-i", "--in-place")) for a in args)
+            elif prog.endswith("sed") and (any(a == "-i" or a.startswith(("-i", "--in-place", "-f")) for a in args)
                                             or re.search(r"(^|[;{}\s])\d*,?\d*\s*[ew]\s|/[gpiIm0-9]*[ew](\s|;|'|$)|\bw\s+\S", script)):
                 facts["unknown"].append(prog)
                 all_safe = False
@@ -582,6 +656,15 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                 merge(f)
         if prog in SAFE_PROGRAMS:
             if prog == "find" and any(a in {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fls"} for a in args):
+                all_safe = False
+            if prog in {"fd", "fdfind"} and any(a in {"-x", "-X", "--exec", "--exec-batch"} or a.startswith(("--exec", "-x", "-X")) for a in args):
+                all_safe = False
+            if prog == "rg" and any(a.startswith(("--pre", "--search-zip")) or a == "-z" for a in args):
+                all_safe = False
+            recursive = (prog == "grep" and any(re.match(r"^-[a-zA-Z]*[rR]", a) or a in {"--recursive", "--dereference-recursive"} for a in args)) \
+                or (prog == "rg" and any(a in {"--hidden", "-.", "--no-ignore", "-u", "-uu", "-uuu"} for a in args))
+            if recursive and project_has_secrets(project):
+                facts["may_read_secrets"] = True
                 all_safe = False
             if risky_paths:
                 all_safe = False
@@ -622,6 +705,17 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
                     if any(a in {"-f", "--force", "--force-with-lease", "--mirror", "--delete"} or a.startswith("+") for a in rest):
                         facts["force_push"] = True
                 continue
+            for a in rest:
+                if ":" in a and not a.startswith("-") and not re.match(r"^\w+://", a):
+                    rp = a.split(":", 1)[1]
+                    if rp and classify_path(expand(rp, project)) in {"sensitive", "secret_file"}:
+                        facts["reads_sensitive"] = True
+                        all_safe = False
+            if sub in {"rebase", "bisect", "filter-branch", "difftool", "mergetool", "submodule"} and (
+                    sub != "rebase" or any(a in {"-x", "--exec", "-i", "--interactive"} or a.startswith("--exec") for a in rest)):
+                all_safe = False
+                facts["unknown"].append(f"git {sub}")
+                continue
             if sub in {"reset", "clean", "checkout", "restore"} and any(a in {"--hard", "-f", "-fd", "-fdx", "-xdf", ".", "--"} for a in rest):
                 facts["destructive_git"] = True
                 all_safe = False
@@ -645,6 +739,12 @@ def check_bash(cmd: str, cwd: str, project: str, depth: int = 0) -> tuple[Decisi
         all_safe = False
     if facts["net"] and facts["reads_sensitive"]:
         return Decision("block", "Sends a secret or private file to the internet", "L1-rules", "taint_net", severity="critical"), facts
+    if facts.get("exec_env"):
+        return Decision("ask", f"Sets {', '.join(facts['exec_env'])}, which makes programs run other code", "L1-rules", "exec_env",
+                        severity="warning"), facts
+    if facts.get("custom_registry"):
+        return Decision("ask", "Installs packages from a custom registry or index (skips the usual supply-chain checks)", "L1-rules",
+                        "custom_registry", severity="warning"), facts
     if facts.get("git_exec_config"):
         return Decision("ask", "Changes a git setting that makes git run a program later (a common way to hide a backdoor)", "L1-rules",
                         "git_exec_config", severity="warning"), facts
@@ -707,6 +807,18 @@ SAFE_DOMAINS = {"docs.python.org", "developer.mozilla.org", "github.com", "api.g
                 "docs.github.com", "platform.openai.com", "opencode.ai", "code.claude.com", "docs.docker.com"}
 
 
+CURL_VALUE_FLAGS = {"-d", "--data", "--data-binary", "--data-raw", "--data-urlencode", "--data-ascii", "-F", "--form", "--form-string",
+                    "-H", "--header", "-o", "--output", "-X", "--request", "-u", "--user", "-T", "--upload-file", "-A", "--user-agent",
+                    "-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar", "--unix-socket", "--abstract-unix-socket", "-x", "--proxy",
+                    "-w", "--write-out", "-m", "--max-time", "--connect-timeout", "-K", "--config", "-r", "--range", "--resolve",
+                    "--connect-to", "-E", "--cert", "--key", "--cacert", "-U", "--proxy-user", "-Q", "--quote", "-t", "--telnet-option",
+                    "-z", "--time-cond", "-C", "--continue-at", "-Y", "-y", "--retry", "--limit-rate", "--interface", "--json",
+                    "--url", "--variable", "--expand-url"}
+WGET_VALUE_FLAGS = {"-O", "--output-document", "-o", "--output-file", "-a", "--append-output", "-i", "--input-file", "-e", "--execute",
+                    "-U", "--user-agent", "-P", "--directory-prefix", "-t", "--tries", "-T", "--timeout", "-w", "--wait", "-Q", "--quota",
+                    "--post-data", "--post-file", "--body-data", "--body-file", "--header", "-B", "--base", "-l", "--level",
+                    "--user", "--password", "--method", "--load-cookies", "--save-cookies", "-D", "--domains"}
+NC_VALUE_FLAGS = {"-p", "-s", "-w", "-i", "-X", "-x", "-e", "-c"}
 NET_VALUE_FLAGS = {"-d", "--data", "--data-binary", "--data-raw", "--data-urlencode", "--data-ascii", "-F", "--form", "--form-string",
                    "-H", "--header", "-o", "--output", "-X", "--request", "-u", "--user", "-T", "--upload-file", "-A",
                    "--user-agent", "-e", "--referer", "-b", "--cookie", "-c", "--cookie-jar", "--unix-socket", "--abstract-unix-socket",
@@ -721,7 +833,10 @@ def net_hosts(prog: str, args: list[str]) -> tuple[list[str], list[str]]:
     hosts, values, i = [], [], 0
     while i < len(args):
         a = args[i]
-        if a in NET_VALUE_FLAGS and prog not in {"ssh", "scp", "rsync", "sftp"} or (prog in {"ssh", "scp", "sftp"} and a in {"-i", "-p", "-P", "-o", "-F", "-J", "-L", "-R", "-D"}):
+        flags = CURL_VALUE_FLAGS if prog in {"curl", "git"} else WGET_VALUE_FLAGS if prog == "wget" else NC_VALUE_FLAGS \
+            if prog in {"nc", "ncat", "netcat", "socat", "telnet"} else {"-i", "-p", "-P", "-o", "-F", "-J", "-L", "-R", "-D", "-l", "-b", "-c", "-e", "-S", "-W"} \
+            if prog in {"ssh", "scp", "sftp", "rsync"} else set()
+        if a in flags:
             if i + 1 < len(args):
                 values.append(args[i + 1])
             i += 2
@@ -731,7 +846,7 @@ def net_hosts(prog: str, args: list[str]) -> tuple[list[str], list[str]]:
             continue
         m = re.match(r"^[a-zA-Z][\w+.-]*://(?:[^@/]*@)?(\[[^\]]+\]|[^:/?#]+)", a)
         if m:
-            hosts.append(m.group(1).strip("[]"))
+            hosts.append(m.group(1).strip("[]").rstrip(".").lower())
         elif re.match(r"^[\w.-]+@[\w.-]+(:|$)", a):
             hosts.append(a.split("@", 1)[1].split(":")[0])
         elif re.match(r"^(\d{1,3}\.){3}\d{1,3}(:\d+)?(/|$)", a) or re.match(r"^localhost(:\d+)?(/|$)", a):
@@ -744,8 +859,16 @@ def net_hosts(prog: str, args: list[str]) -> tuple[list[str], list[str]]:
     return hosts, values
 
 
+def project_has_secrets(project: str) -> bool:
+    import glob as _glob
+    for pat in (".env*", "*/.env*", "secrets.*", "*/secrets.*", "credentials*", "*.pem", "*.key"):
+        if _glob.glob(os.path.join(project, pat), include_hidden=True):
+            return True
+    return False
+
+
 def host_matches(host: str, patterns) -> bool:
-    host = (host or "").lower()
+    host = (host or "").lower().rstrip(".")
     for p in patterns:
         p = p.lower().strip()
         if p.startswith("*."):
@@ -768,9 +891,11 @@ def check_action(tool: str, inp: dict, cwd: str, project: str) -> tuple[Decision
             return Decision("block", "Reads Senti's private files (device token, decoys, audit log)", "L1-rules", "read_senti_private",
                             severity="critical"), facts
         pattern = inp.get("glob") or (inp.get("pattern") if tool == "Glob" else "") or ""
-        if tool == "Grep" and pattern and any(fnmatch.fnmatch(n, os.path.basename(pattern)) for n in SECRET_SAMPLES):
+        if tool == "Grep" and pattern and any(fnmatch.fnmatch(n, os.path.basename(g)) for g in expand_braces(pattern) for n in SECRET_SAMPLES):
             return Decision("ask", f"Searches inside files with passwords or API keys ({pattern})", "L1-rules", "grep_secret_files",
                             severity="warning"), facts
+        if kind == "normal" and any(inside(p, os.path.join(HOME, d)) for d in AGENT_NOTE_DIRS):
+            return Decision("allow", "Reads the agent's own notes", "L1-rules", "agent_notes"), facts
         if kind == "sensitive":
             return Decision("block", f"Reads a private key or credential file ({short(p)})", "L1-rules", "read_sensitive",
                             severity="critical"), facts
@@ -800,6 +925,8 @@ def check_action(tool: str, inp: dict, cwd: str, project: str) -> tuple[Decision
         if kind == "sensitive":
             return Decision("block", f"Changes your keys or credentials ({short(p)})", "L1-rules", "write_sensitive",
                             severity="critical"), facts
+        if kind == "normal" and any(inside(p, os.path.join(HOME, d)) for d in AGENT_NOTE_DIRS) and not find_secrets(content):
+            return Decision("allow", "Updates the agent's own notes", "L1-rules", "agent_notes"), facts
         if kind == "persistence":
             d = scan_code(content) if content else None
             if d is not None and d.verdict == "block":
@@ -843,6 +970,8 @@ def check_action(tool: str, inp: dict, cwd: str, project: str) -> tuple[Decision
     return None, facts
 
 
+# agents' own memory / plan / todo folders (never their settings, which are guard paths)
+AGENT_NOTE_DIRS = [".claude/projects", ".claude/plans", ".claude/todos", ".codex/memories", ".local/share/opencode/storage"]
 SECRET_SAMPLES = [".env", ".env.local", ".env.production", "id_rsa", "id_ed25519", "credentials", "credentials.json", "secrets.yaml",
                   "secrets.json", ".netrc", ".npmrc", ".pypirc", "service-account.json", "key.pem", ".dev.vars"]
 CODE_EXT = (".py", ".sh", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".rb", ".pl", ".zsh", ".bash", ".php", ".go", ".rs",

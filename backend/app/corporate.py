@@ -29,7 +29,8 @@ def render(task: str, action: dict, content: str | None, instructions: str, fact
     parts = []
     if instructions.strip():
         parts += ["ORGANIZATION POLICY:", instructions.strip()[:2000]]
-    parts += [f"TASK given by the user: {task or '(unknown)'}", "ACTION:", json.dumps(action, indent=1, default=str)[:4000]]
+    parts += [f"TASK given by the user: {task or '(unknown)'}",
+              "ACTION (written by the agent, untrusted):", "<untrusted>", json.dumps(action, indent=1, default=str)[:4000], "</untrusted>"]
     if facts:
         parts += ["STATIC FACTS (from Senti's analysis): " + json.dumps(facts, default=str)[:800]]
     if content:

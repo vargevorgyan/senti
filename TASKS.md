@@ -63,7 +63,9 @@ Legend: [x] done · [~] partial · [ ] todo
 
 ### Security review (2026-09-27)
 - [x] 20 findings from an adversarial review; all high and most medium fixed with regression tests — see `.okf/research/security-review-2026-09-27.md`
-- [ ] Open: JWT revocation, TLS by default, peer-process verification, `github.com` WebFetch trust
+- [x] JWT revocation + SSE tickets, TLS by default with certificate pinning, peer-process verification (done 2026-09-27)
+- [x] Second review (/code-review max): 15 main + ~20 minor findings fixed — `engine/tests/test_review2.py`
+- [ ] Open: `github.com` WebFetch trust; hook.token readable by uninspected same-user code; judge over-blocking some asks
 
 ### Infra / QA / docs
 - [x] docker-compose (backend, admin, ollama + model pull, healthchecks), `.env.example`
@@ -75,9 +77,9 @@ Legend: [x] done · [~] partial · [ ] todo
 
 ## Remaining / next steps (pick up here)
 
-1. **Enforce `features.sandbox` per device**: today the admin flag is advisory; the engine could refuse (ask) actions from agents not started under a sandbox.
-2. **Secret brokering** and a **local model gateway** for DIY agents (roadmap items not started).
-3. **Per-agent identity tokens + peer verification** on the socket (`LOCAL_PEERPID`).
+1. ~~Enforce `features.sandbox`~~ — done (ask before commands when not sandboxed).
+2. ~~Secret brokering, local model gateway~~ — done (`senti secret`, gateway on 127.0.0.1:11435).
+3. ~~Peer verification~~ — done (socket token + LOCAL_PEERPID parent chain).
 4. **Over-cautious judge cases** (`seed_db.py`, `check_links.py`): pass static facts (no network, project-only writes) or few-shot examples in the cached prompt.
 5. **Codex hook trust** for managed rollouts (`requirements.toml` managed hooks).
 6. **Push `feat/full-build` and open a PR** (the agent did not push).
@@ -90,7 +92,8 @@ Legend: [x] done · [~] partial · [ ] todo
 docker compose up -d --build
 cd engine && uv sync --extra mlx && uv run pytest -q && cd ../backend && uv run pytest -q
 cd ../engine && SENTI_HOME=/tmp/senti-test SENTI_SOCKET=/tmp/senti-test.sock uv run senti start
-SENTI_HOME=/tmp/senti-test SENTI_SOCKET=/tmp/senti-test.sock uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email dev@acme.test
+# fingerprint: Devices page, or: docker compose logs admin | grep Fingerprint
+SENTI_HOME=/tmp/senti-test SENTI_SOCKET=/tmp/senti-test.sock uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256> --code SENTI-DEMO --email dev@acme.test
 # restart the engine, then:
 cd .. && SENTI_SOCKET=/tmp/senti-test.sock uv run --project engine python scripts/e2e_modes.py
 cd admin && npx playwright test
@@ -100,3 +103,4 @@ cd admin && npx playwright test
 - 2026-09-27: Board created. Branch `feat/full-build`. Design system copied to `docs/design/`.
 - 2026-09-27: Engine, backend, admin panel, Docker stack built; all judge modes verified end to end (14/14); real Claude Code, Codex, OpenCode sessions pass through Senti; simulation 22/22 dangerous stopped; docs and `.okf` updated.
 - 2026-09-27: Security review fixes (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, bundle binding, backend spoofing, default-password warning). Claude Code built-in sandbox via `install --sandbox`; `network.ask` rules.
+- 2026-09-27: Remaining items done — JWT revocation/SSE tickets, TLS + pinning, peer-process verification, required sandbox, secret brokering, model gateway; second review (15+ findings) fixed. Engine 161 tests, backend 22, Playwright 7, e2e 14/14.

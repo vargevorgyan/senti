@@ -83,6 +83,16 @@ In the playground the 3B corporate model first **allowed** `psql -h billing.prod
 instructions say production hosts need approval. Fixes: `network.ask` lists (DB clients' hosts are extracted too) enforce it
 deterministically, and both judge prompts now say policy notes override the model's own judgement (the model then answered ask, p=0.78).
 
+# Transport and sessions (implemented)
+
+- **TLS by default:** the admin container serves HTTPS on 8443 with a self-signed certificate created on first start (or yours in
+  `/tls`); HTTP only redirects. The Devices page shows `senti enroll --backend https://HOST:8443 --fingerprint <sha256> …`; the engine
+  pins that exact certificate and refuses plain HTTP to non-local backends (`--insecure-http` for labs).
+- **Admin sessions:** JWTs carry a token version; changing the password or "Sign out everywhere" revokes all sessions. The SSE stream
+  uses a 60-second single-purpose ticket, never the session token.
+- **Enrollment:** a second Mac for an existing person needs a personal code (bound to their email); codes decrement atomically;
+  deleted people are retired (address freed, devices revoked, audit kept).
+
 # Security
 
 Signed bundles; device tokens stored hashed; revocation (`401` → engine keeps last verified profile, marks backend unreachable);

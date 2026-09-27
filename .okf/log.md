@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-09-27
+* **Creation**: [Secret brokering](/architecture/secret-brokering.md), [Local model gateway](/architecture/model-gateway.md).
+* **Update**: TLS by default with certificate pinning, JWT revocation and SSE tickets, peer-process verification, required sandbox — [Org backend](/architecture/org-backend-and-profiles.md), [Hook client](/architecture/hook-client.md), [Roadmap](/roadmap/roadmap.md); second security review fixes — [Security review](/research/security-review-2026-09-27.md).
 * **Update**: Security review — 20 findings, highs fixed (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, backend spoofing) — [Security review](/research/security-review-2026-09-27.md).
 * **Update**: `network.ask` profile rules + DB-client host extraction; judge prompts make org policy binding after the corporate 3B model allowed a prod-DB query — [Org backend](/architecture/org-backend-and-profiles.md). Sandbox per agent verified — [Sandbox](/architecture/enforcement-sandbox.md).
 * **Decision**: No client UI app; FastAPI engine/backend and React admin panel in Docker — [ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md) supersedes ADR-001.

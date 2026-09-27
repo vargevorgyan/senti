@@ -8,13 +8,19 @@ export default function Devices() {
   const { data: roles } = useLoad<Role[]>(() => api('/admin/roles'))
   const toast = useToast()
   const [role, setRole] = useState('engineering')
+  const [codeEmail, setCodeEmail] = useState('')
   useLiveEvent(m => { if (m.type === 'device_enrolled') { devices.reload(); codes.reload() } })
   const { data: tls } = useLoad<{ enabled: boolean; https_port: number; fingerprint?: string }>(() => api('/admin/tls'))
   const backend = tls?.enabled ? `https://${window.location.hostname}:${tls.https_port}` : `${window.location.protocol}//${window.location.host}`
   const code = codes.data?.[0]?.code ?? 'SENTI-DEMO'
   const cmd = `senti enroll --backend ${backend}${tls?.fingerprint ? ` --fingerprint ${tls.fingerprint}` : ''} --code ${code} --email you@company.com`
   const copy = (t: string) => navigator.clipboard.writeText(t).then(() => toast('Copied.'))
-  const newCode = async () => { await api('/admin/enrollment-codes', { method: 'POST', body: { role_id: role, uses: 10, days: 7 } }); codes.reload(); toast('New code created. It works 10 times within 7 days.') }
+  const newCode = async () => {
+    await api('/admin/enrollment-codes', { method: 'POST', body: { role_id: role, uses: 10, days: 7, email: codeEmail } })
+    codes.reload()
+    toast(codeEmail ? `Personal code created for ${codeEmail}. It works once within 7 days.` : 'New code created. It works 10 times within 7 days.')
+    setCodeEmail('')
+  }
   const revoke = async (d: Device) => {
     if (!confirm(`Revoke ${d.hostname}? It stops receiving profiles and its reports are refused.`)) return
     await api(`/admin/devices/${d.id}/revoke`, { method: 'POST' }); devices.reload()
@@ -28,6 +34,7 @@ export default function Devices() {
         <div className="copy"><pre className="mono">{cmd}</pre><button className="btn" onClick={() => copy(cmd)}><Icon name="copy" size={16} />Copy</button></div>
         <div className="row">
           <select value={role} onChange={e => setRole(e.target.value)} style={{ maxWidth: 220 }} aria-label="Role for new code">{(roles ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+          <input type="email" placeholder="Only for (optional) name@company.com" value={codeEmail} onChange={e => setCodeEmail(e.target.value)} style={{ maxWidth: 300 }} aria-label="Personal code for email" />
           <button className="btn" onClick={newCode}><Icon name="key" size={16} />New enrollment code</button>
         </div>
         {(codes.data ?? []).length > 0 && (

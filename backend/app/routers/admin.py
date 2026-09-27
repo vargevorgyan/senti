@@ -289,7 +289,7 @@ def user_json(u: User, db: Session) -> dict:
 
 @router.get("/users")
 def list_users(admin: Admin = Auth, db: Session = Depends(get_db)):
-    return [user_json(u, db) for u in db.query(User).order_by(User.email).all()]
+    return [user_json(u, db) for u in db.query(User).order_by(User.email).all() if "#deleted-" not in u.email]
 
 
 @router.post("/users", status_code=201)
@@ -328,13 +328,17 @@ def delete_user(uid: int, admin: Admin = Auth, db: Session = Depends(get_db)):
     u = db.get(User, uid)
     if not u:
         raise HTTPException(404, "user not found")
+    email = u.email
     for d in db.query(Device).filter_by(user_id=uid).all():
         d.revoked = True
-    db.commit()
     if db.query(Device).filter_by(user_id=uid).count() == 0:
         db.delete(u)
-        db.commit()
-    bump(db, admin.email, "user.delete", u.email)
+    else:
+        # devices keep their audit history, so the row stays but the account is retired and the address freed
+        u.email = f"{email}#deleted-{int(time.time())}"
+        u.agent_profiles = {}
+    db.commit()
+    bump(db, admin.email, "user.delete", email)
     return {"ok": True}
 
 
@@ -352,7 +356,10 @@ def user_effective(uid: int, admin: Admin = Auth, db: Session = Depends(get_db))
 
 # ---------------------------------------------------------------- devices
 def device_json(d: Device) -> dict:
-    st = d.status or {}
+    st = d.status if isinstance(d.status, dict) else {}
+    for k in ("local_judge", "profiles", "stats"):
+        if not isinstance(st.get(k), dict):
+            st = {**st, k: {}}
     return {"id": d.id, "user": d.user.email if d.user else "", "hostname": d.hostname, "platform": d.platform,
             "enrolled_at": d.enrolled_at, "last_seen": d.last_seen, "online": (time.time() - d.last_seen) < ONLINE_S and not d.revoked,
             "revoked": d.revoked, "engine_version": st.get("version"), "local_judge": (st.get("local_judge") or {}).get("state"),
@@ -382,6 +389,7 @@ class CodeIn(BaseModel):
     uses: int = 10
     days: int = 7
     note: str = ""
+    email: str = ""
 
 
 @router.get("/enrollment-codes")
@@ -395,8 +403,9 @@ def create_code(body: CodeIn, admin: Admin = Auth, db: Session = Depends(get_db)
     if not db.get(Role, body.role_id):
         raise HTTPException(422, "unknown role")
     code = "SENTI-" + secrets.token_hex(3).upper() + "-" + secrets.token_hex(3).upper()
-    c = EnrollmentCode(code=code, role_id=body.role_id, uses_left=max(1, body.uses),
-                       expires_at=time.time() + body.days * 86400 if body.days > 0 else 0, note=body.note)
+    c = EnrollmentCode(code=code, role_id=body.role_id, uses_left=max(1, body.uses) if not body.email else 1,
+                       expires_at=time.time() + body.days * 86400 if body.days > 0 else 0, note=body.note,
+                       email=body.email.strip().lower())
     db.add(c)
     db.commit()
     db.add(ChangeLog(actor=admin.email, action="enrollment_code.create", target=code))
@@ -498,6 +507,9 @@ def decide_approval(aid: str, body: DecisionIn, admin: Admin = Auth, db: Session
     a = db.get(Approval, aid)
     if not a:
         raise HTTPException(404, "not found")
+    if a.status == "pending" and time.time() - a.created_at > 900:
+        a.status, a.decided_by = "expired", "timeout"
+        db.commit()
     if a.status != "pending":
         raise HTTPException(409, f"already {a.status}")
     a.status = "approved" if body.decision == "approve" else "denied"

@@ -31,15 +31,25 @@ class EnrollIn(BaseModel):
 
 @router.post("/devices/enroll")
 def enroll(body: EnrollIn, db: Session = Depends(get_db)):
+    from sqlalchemy import update
     code = db.get(EnrollmentCode, body.code.strip())
     if code is None or code.uses_left <= 0 or (code.expires_at and code.expires_at < time.time()):
         raise HTTPException(403, "enrollment code is invalid or expired")
+    # atomic decrement: parallel requests can't over-spend a code
+    if db.execute(update(EnrollmentCode).where(EnrollmentCode.code == code.code, EnrollmentCode.uses_left > 0)
+                  .values(uses_left=EnrollmentCode.uses_left - 1)).rowcount != 1:
+        raise HTTPException(403, "enrollment code is used up")
     email = body.user_email.strip().lower()
     if "@" not in email:
         raise HTTPException(422, "a valid email is required")
     user = db.query(User).filter_by(email=email).first()
     if user is not None and user.role_id != code.role_id:
         raise HTTPException(403, "this code is for a different role than the existing account; ask an administrator")
+    if user is not None and (code.email or "").lower() != email and \
+            db.query(Device).filter_by(user_id=user.id, revoked=False).count() > 0:
+        raise HTTPException(403, "this account already has an enrolled Mac; ask an administrator for a personal code for it")
+    if code.email and code.email.lower() != email:
+        raise HTTPException(403, "this enrollment code belongs to another person")
     if user is None:
         user = User(email=email, name=email.split("@")[0], role_id=code.role_id)
         db.add(user)
@@ -47,7 +57,6 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
     token, h = new_device_token()
     dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=time.time())
     db.add(dev)
-    code.uses_left -= 1
     db.commit()
     bus.publish("admin", {"type": "device_enrolled", "device_id": dev.id, "user": email, "hostname": dev.hostname})
     return {"device_id": dev.id, "device_token": token, "public_key": public_key_b64(), "org_name": settings.org_name,
@@ -92,9 +101,17 @@ class EventsIn(BaseModel):
 def ingest(body: EventsIn, dev: Device = Depends(current_device), db: Session = Depends(get_db)):
     n = 0
     for e in body.events[:500]:
-        eid = str(e.get("id") or "")
+        if not isinstance(e, dict):
+            continue
+        eid = str(e.get("id") or "")[:64]
         if not eid or db.get(Event, eid):
             continue
+        try:
+            float(e.get("ts") or 0), float(e.get("ms") or 0)
+        except (TypeError, ValueError):
+            e = {**e, "ts": time.time(), "ms": 0}  # one malformed field must not poison the whole batch
+        if not isinstance(e.get("input"), dict):
+            e = {**e, "input": {"value": str(e.get("input"))[:500]}}
         verdict = e.get("verdict") if e.get("verdict") in {"allow", "ask", "block"} else None
         ev = Event(id=eid, device_id=dev.id, ts=float(e.get("ts") or time.time()), user_email=dev.user.email,
                    agent=str(e.get("agent", ""))[:64], event=str(e.get("event", "pre_tool"))[:32], tool=str(e.get("tool", ""))[:128],

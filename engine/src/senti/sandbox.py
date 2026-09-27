@@ -40,7 +40,10 @@ def srt_settings(profile: dict, agent: str, project: str) -> dict:
         "filesystem": {"denyRead": deny_read, "allowRead": [],
                        "allowWrite": [project, "/tmp", "/private/tmp", f"{home}/.cache", *agent_state.get(agent, [])],
                        "denyWrite": [str(senti_home()), "**/.env", f"{home}/.claude/settings.json", f"{home}/.codex/config.toml",
-                                     f"{home}/.codex/hooks.json", f"{home}/.config/opencode/plugins"]},
+                                     f"{home}/.codex/hooks.json", f"{home}/.config/opencode/plugins",
+                                     f"{project}/.claude/settings.json", f"{project}/.claude/settings.local.json",
+                                     f"{project}/.codex/hooks.json", f"{project}/.codex/config.toml", f"{project}/.opencode/plugins",
+                                     f"{project}/.opencode/plugin", f"{project}/.git/hooks", f"{project}/.git/config"]},
         "enableWeakerNestedSandbox": False,
     }
 

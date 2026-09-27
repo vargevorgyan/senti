@@ -167,3 +167,24 @@ def test_enroll_cannot_switch_role(client, admin_headers, device):
 
 def test_default_password_flag(client, admin_headers):
     assert client.get("/api/v1/admin/overview", headers=admin_headers).json()["default_password"] is True
+
+
+def test_second_mac_needs_personal_code(client, admin_headers, device):
+    r = client.post("/api/v1/devices/enroll", json={"code": "SENTI-DEMO", "user_email": "dev@acme.test"})
+    assert r.status_code == 403
+    code = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "engineering", "email": "dev@acme.test"}).json()["code"]
+    assert client.post("/api/v1/devices/enroll", json={"code": code, "user_email": "someone@acme.test"}).status_code == 403
+    assert client.post("/api/v1/devices/enroll", json={"code": code, "user_email": "dev@acme.test"}).status_code == 200
+
+
+def test_delete_user_with_devices(client, admin_headers, device):
+    u = next(x for x in client.get("/api/v1/admin/users", headers=admin_headers).json() if x["email"] == "dev@acme.test")
+    client.delete(f"/api/v1/admin/users/{u['id']}", headers=admin_headers)
+    assert all(x["email"] != "dev@acme.test" for x in client.get("/api/v1/admin/users", headers=admin_headers).json())
+    assert client.get("/api/v1/device/profiles", headers=device["headers"]).status_code == 401
+
+
+def test_bad_event_does_not_poison_batch(client, admin_headers, device):
+    r = client.post("/api/v1/events", headers=device["headers"], json={"events": [
+        {"id": "bad1", "ts": "not-a-number", "input": "x"}, {"id": "good1", "verdict": "allow"}]})
+    assert r.status_code == 200 and r.json()["stored"] == 2

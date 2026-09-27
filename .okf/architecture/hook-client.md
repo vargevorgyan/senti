@@ -40,9 +40,16 @@ Agents (Claude Code, Codex, the OpenCode plugin) launch this program **once per 
 - Replies: Claude Code `hookSpecificOutput.permissionDecision` allow/ask/deny; Codex empty stdout = allow, `deny` + reason otherwise; PostToolUse `additionalContext` for injection warnings; OpenCode `{verdict, reason, context}`.
 - Agent hook timeouts are set to 600 s so the hook's own fail-closed path always wins (an agent-side timeout would fail open).
 
-# Future hardening
+# Authentication and caller identity (implemented)
 
-Per-agent identity token and peer-process verification (`LOCAL_PEERPID` / audit token) so a same-user process cannot impersonate an agent.
+- Every request carries `X-Senti-Token` from `~/.senti/hook.token` (0600, created by the engine); missing/wrong → 401 → fail closed.
+- The engine reads the caller's PID from the socket (`LOCAL_PEERPID` on macOS, `SO_PEERCRED` on Linux) via a custom uvicorn h11
+  protocol, walks the parent chain with psutil (`identity.py`) and checks the claimed agent is an ancestor. Unverified callers get
+  **ask** (`agent_identity: enforce`; `record` only logs). The identity is written to the audit log.
+- Control endpoints (`/v1/reload`, snapshot restore) are refused to anything running under an AI agent; agents also can't run
+  `senti stop|uninstall|unenroll|secret …` (hard deny).
+- Sandbox detection from the same chain (sandbox-exec/srt ancestors, Claude Code `sandbox.enabled`, Codex without bypass flags) drives
+  the profile's **Require a sandbox** option: unsandboxed agents are asked before every command; `dangerouslyDisableSandbox` → ask/block.
 
 [^sim]: Rules-only simulation with the Swift hook (71 actions)
 [^sim-py]: Same simulation with a Python hook client

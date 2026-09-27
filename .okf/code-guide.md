@@ -40,17 +40,20 @@ sources:
 | `audit.py` | Hash-chained append-only JSONL log with upload offsets |
 | `honeytokens.py`, `undo.py`, `supply_chain.py`, `injection.py`, `notify.py`, `sandbox.py`, `patch.py` | Decoys, APFS-clone snapshots, package check, post-read injection scan, macOS notification/dialog, srt settings, apply_patch parser |
 | `installers.py`, `cli.py` | Hook installers (with backups) and the `senti` command |
+| `identity.py` | Peer PID from the socket, parent chain, agent verification, sandbox detection |
+| `secrets.py`, `secret_exec.py` | Secret brokering: Keychain store, grants, the execution wrapper with output masking |
+| `gateway.py` | OpenAI-compatible model gateway for DIY agents (127.0.0.1:11435) |
 
 # Run
 
 ```bash
 # organization side
-docker compose up -d --build          # admin http://localhost:8080, device API http://localhost:8000
+docker compose up -d --build          # admin + device API https://localhost:8443 (self-signed; Devices page shows the fingerprint)
 
 # a Mac
 cd engine && uv sync --extra mlx       # Apple Silicon; drop --extra mlx for rules + corporate judge only
 uv run senti start                     # or: uv run senti service install
-uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email you@acme.test
+uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256 from the Devices page> --code SENTI-DEMO --email you@acme.test
 uv run senti stop && uv run senti start
 uv run senti install all               # or --project DIR for one repo
 ```
@@ -58,8 +61,8 @@ uv run senti install all               # or --project DIR for one repo
 # Tests
 
 ```bash
-cd engine && uv run pytest -q          # 112 tests: rules, review regressions, profiles, judge modes, adapters, undo, audit
-cd backend && uv run pytest -q         # 17 API tests
+cd engine && uv run pytest -q          # 161 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
+cd backend && uv run pytest -q         # 22 API tests
 cd admin && npx playwright test        # 7 browser tests against the running stack
 SENTI_SOCKET=... uv run --project engine python scripts/e2e_modes.py   # 14 live checks
 ```

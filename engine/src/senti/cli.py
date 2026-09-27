@@ -217,7 +217,12 @@ def cmd_honeytoken(a) -> int:
 def _profile_for(agent: str) -> dict:
     from .profiles import ProfileSet, load_cached
     s = Settings.load()
-    ps = (load_cached(s.backend_public_key) if s.enrolled else None) or ProfileSet()
+    if s.enrolled:
+        from .profiles import STRICT_PROFILE
+        ps = load_cached(s.backend_public_key, s.device_id) or ProfileSet(profiles={"strict-offline": STRICT_PROFILE},
+                                                                           default="strict-offline")
+    else:
+        ps = ProfileSet()
     return ps.for_agent(agent)
 
 

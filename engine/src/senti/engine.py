@@ -112,7 +112,7 @@ class Engine:
         try:
             if action.event == "prompt":
                 self.tasks[action.session_id] = (action.prompt or "")[:1000]
-                self.tainted.pop(action.session_id, None)
+                # injection taint is kept for the whole session: a new prompt doesn't make earlier content trustworthy
                 profile = self.profiles.for_agent(action.agent)
                 if (profile.get("features") or {}).get("scope_contract") and self.local.state == "ready":
                     self.spawn(self._derive_scope(action.session_id, action.prompt))
@@ -141,7 +141,8 @@ class Engine:
                                                                             self.grants.issue(brokered, action.input["command"]))}
                 d.meta["secrets"] = brokered
             if d.verdict == "allow":
-                self._maybe_snapshot(action, d)
+                await asyncio.to_thread(self._maybe_snapshot, action, d)
+            self._trim()
             if d.verdict == "block" and self.settings.notifications:
                 self.spawn(notify.notify("Senti stopped something", d.reason, f"{action.agent} · {action.tool}"))
             self.stats["decisions"] += 1
@@ -168,9 +169,17 @@ class Engine:
                 return Decision("allow", f"Edits {len(ds)} files inside the project", worst.layer, worst.rule)
             return worst
 
+        if not a.tool:
+            return Decision("ask", "The agent's request was empty or unreadable, so I'm asking", "fallback", "empty_request",
+                            severity="warning")
         project = project_root(a.cwd)
         profile = self.profiles.for_agent(a.agent)
         features = profile.get("features") or {}
+        if a.input.get("dangerouslyDisableSandbox"):
+            if features.get("sandbox"):
+                return Decision("block", "Wants to run a command outside its sandbox, which your organization requires",
+                                "L1-profile", "sandbox_escape", severity="critical")
+            return Decision("ask", "Wants to run a command outside its sandbox", "L1-rules", "sandbox_escape", severity="warning")
         task = self.tasks.get(a.session_id, "")
         blob = json.dumps(a.input, default=str)
 
@@ -239,9 +248,7 @@ class Engine:
                             "tainted_session_net", severity="warning")
 
         if combined and combined.verdict == "ask":
-            if self.allowlist.get(self.action_key(a, project)):
-                return Decision("allow", "You chose 'Always allow' for this before", "L0-allowlist", "always_allow")
-            return combined
+            return combined  # rule / profile questions are never skipped by an earlier "Always allow"
         if combined and combined.verdict == "allow" and not (d_det is None and script_text and d_rules is None):
             if not (a.tool in {"Write", "Edit", "MultiEdit"} and facts.get("run_later")):
                 self._maybe_prefetch(a, project, profile, task)
@@ -265,9 +272,14 @@ class Engine:
         if key in self.cache:
             c = self.cache[key]
             return Decision(c.verdict, c.reason, "L0-cache", c.rule, c.p, c.severity)
-        if script_text and a.tool not in {"Write", "Edit", "MultiEdit"} and not facts.get("script_args") and not facts.get("inline_code") \
-                and len(facts.get("scripts", [])) == 1 and not facts.get("unknown"):
-            pk = hashlib.sha256((task + "\0" + script_text).encode()).hexdigest()
+        from .rules import split_segments
+        single = a.tool == "Bash" and len(split_segments(a.input.get("command", "")) or []) == 1
+        if script_text and single and not facts.get("script_args") and not facts.get("inline_code") \
+                and len(facts.get("scripts", [])) == 1 and not facts.get("unknown") and not facts.get("net") \
+                and not facts.get("hosts") and not facts.get("writes") and not facts.get("sudo") \
+                and (profile.get("judge") or {}).get("mode", "local") in {"local", "local_then_corporate"}:
+            pk = hashlib.sha256((a.agent + "\0" + str(profile.get("id")) + str(profile.get("version")) + "\0" + task + "\0"
+                                 + script_text.split("\n", 1)[1]).encode()).hexdigest()
             if pk in self.prefetch:
                 try:
                     r: JudgeResult = await asyncio.wait_for(asyncio.shield(self.prefetch[pk]), self.settings.judge_timeout_s)
@@ -421,8 +433,10 @@ class Engine:
             return nd
         if NATIVE_ASK.get(a.agent, True):
             return d
-        detail = a.input.get("command") or a.input.get("file_path") or a.input.get("url") or json.dumps(a.input)[:300]
-        verdict, how = await notify.ask_dialog(a.agent.capitalize(), d.reason, str(detail)[:400],
+        detail = str(a.input.get("command") or a.input.get("file_path") or a.input.get("url") or json.dumps(a.input))
+        if len(detail) > 500:  # show the start AND the end: the dangerous part is often at the tail
+            detail = detail[:240] + "\n…\n" + detail[-240:]
+        verdict, how = await notify.ask_dialog(a.agent.capitalize(), d.reason, detail,
                                                timeout=min(self.settings.approval_timeout_s, 600))
         if verdict == "allow":
             if how == "always":
@@ -467,7 +481,8 @@ class Engine:
         content = a.input.get("content") if a.tool == "Write" else (read_script(path) or "").replace(
             a.input.get("old_string", ""), a.input.get("new_string", ""), 1)
         text = f"# file: {os.path.basename(path)}\n{content or ''}"
-        pk = hashlib.sha256((task + "\0" + text).encode()).hexdigest()
+        pk = hashlib.sha256((a.agent + "\0" + str(profile.get("id")) + str(profile.get("version")) + "\0" + task + "\0"
+                             + (content or "")).encode()).hexdigest()
         if pk in self.prefetch:
             return
         act = {"tool": "Bash", "command": f"(agent is about to run) {os.path.basename(path)}", "cwd": short(a.cwd)}
@@ -492,8 +507,10 @@ class Engine:
                 try:
                     import subprocess
                     root = project_root(a.cwd)
-                    out = subprocess.run(["git", "-C", root, "status", "--porcelain"], capture_output=True, text=True,
-                                         timeout=5).stdout
+                    # never let repo config run code as the engine (core.fsmonitor, hooks)
+                    out = subprocess.run(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+                                          "-C", root, "status", "--porcelain"], capture_output=True, text=True, timeout=5,
+                                         env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}).stdout
                     targets += [os.path.join(root, ln[3:].strip()) for ln in out.splitlines() if ln[3:].strip()]
                 except Exception:
                     pass
@@ -534,6 +551,13 @@ class Engine:
                 return None
             return Decision("allow", f"Fits the task scope ({', '.join(hosts)})", "L0-scope", "scope_contract")
         return None
+
+    def _trim(self) -> None:
+        """Bound in-memory state so a long-running engine doesn't grow without limit."""
+        for d, cap in ((self.cache, 5000), (self.tasks, 2000), (self.tainted, 2000), (self.scopes, 2000)):
+            if len(d) > cap:
+                for k in list(d)[: len(d) - cap]:
+                    d.pop(k, None)
 
     # ------------------------------------------------------------------ audit
     def _log(self, a: Action, d: Decision | None, t0: float, extra: dict | None = None) -> None:

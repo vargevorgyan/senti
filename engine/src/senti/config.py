@@ -89,7 +89,7 @@ def hook_token(create: bool = False) -> str:
     """Per-install secret the hook presents on the socket, so random same-user processes can't drive the engine."""
     import secrets
     p = senti_home() / "hook.token"
-    if p.exists():
+    if p.exists() and p.read_text().strip():
         return p.read_text().strip()
     if not create:
         return ""

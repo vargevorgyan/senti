@@ -10,6 +10,8 @@ def main() -> None:
     event = sys.argv[2] if len(sys.argv) > 2 else "pre"
     home = os.environ.get("SENTI_HOME", os.path.expanduser("~/.senti"))
     path = os.environ.get("SENTI_SOCKET", os.path.join(home, "senti.sock"))
+    if len(path.encode()) > 100:
+        path = f"/tmp/senti-{os.getuid()}.sock"
     data = sys.stdin.buffer.read()
     try:
         token = open(os.path.join(home, "hook.token")).read().strip()

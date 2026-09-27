@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from importlib import resources
 
@@ -42,8 +43,18 @@ def _dist(a: str, b: str) -> int:
     return prev[-1]
 
 
+URL_SPEC = re.compile(r"(://|^git\+|^github:|^gitlab:|^bitbucket:|^file:|^link:|\.tgz$|\.tar\.gz$|\.whl$|\.zip$|^[\w.-]+/[\w.-]+$|\s*@\s*\w+://)")
+
+
 def check_package(manager: str, raw: str) -> Decision | None:
     eco = ECOSYSTEM.get(manager, "npm")
+    spec = raw.strip()
+    if eco == "npm" and "@npm:" in spec:
+        spec = spec.split("@npm:", 1)[1]  # alias: `lodash@npm:evil` really installs `evil`
+        raw = spec
+    if URL_SPEC.search(spec.split("@", 1)[-1] if eco == "npm" and not spec.startswith("@") else spec) or URL_SPEC.search(spec):
+        return Decision("ask", f"Installs a package straight from a URL, git or a file ({spec[:80]}), skipping the registry's checks",
+                        "L2-supply-chain", "url_package", severity="warning")
     name = _norm(raw, eco)
     d = _data()
     if name in d.get("malicious", {}).get(eco, []):

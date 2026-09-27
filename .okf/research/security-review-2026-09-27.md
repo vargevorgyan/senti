@@ -45,14 +45,25 @@ All high findings and most medium ones are fixed and pinned by regression tests 
 | Backend: enrolling as an existing user with another role's code | refused (403) |
 | Default credentials exposed | ports bound to 127.0.0.1 by default (`SENTI_BIND`); admin panel warns while the default password is in use and can change it |
 
+# Second review (/code-review, max effort)
+
+A second pass found 15+ more issues, all fixed with tests in `engine/tests/test_review2.py` and `backend/tests/test_api.py`:
+newline-separated commands treated as one safe command; profile allow patterns prefix-matching compound commands (now every
+segment must match); unparsable shell syntax failing open (now ask); `.env` leaks via `grep -r`, `git show HEAD:.env`, brace globs;
+org file denies not applied to shell reads; dot-file patterns (`.env*`) never matching; `dangerouslyDisableSandbox`; exec-capable
+environment variables (`GIT_PAGER`, `DYLD_*`, `NODE_OPTIONS`, `GIT_CONFIG_*`…) and wrappers (`timeout`, `nice`); npm aliases, URL
+specs and custom registries; curl `-F f=@file`/`-d@file`; value-less flags swallowing URLs; `git rebase -x`, `rg --pre`, `fd -x`,
+`awk -f`; prefetch reuse across pipes/profiles; unreadable hook bodies; "Always allow" overriding profile asks; taint cleared by the
+next prompt; override dropping judge privacy/instructions; enrollment hijack of existing accounts; user deletion no-op; malformed
+events poisoning batches; engine `git status` running repo fsmonitor.
+
 # Open
 
-- JWT revocation / rotation on password change; the SSE query token can still appear in proxy logs.
-- Plain HTTP between Mac and backend by default (put TLS in front for real deployments).
 - `SAFE_DOMAINS` still includes `github.com` for `WebFetch` (attacker content can live there; injection scanning is the mitigation).
-- Same-user processes can read `hook.token` through uninspected means; peer-process verification (`LOCAL_PEERPID`) remains on the roadmap.
+- Same-user processes can still read `hook.token` through uninspected means (peer verification now asks when the caller isn't the claimed agent).
+- The judge sometimes over-blocks (e.g. `DROP TABLE` in a script → block instead of ask).
 
-After the fixes: engine 112 tests, backend 17, Playwright 7, e2e 14/14, simulation 22/22 dangerous stopped with 97% exact.
+After both reviews: engine 161 tests, backend 22, Playwright 7, e2e 14/14, simulation 22/22 dangerous stopped (95–97% exact across runs).
 
 [^review]: Security review sub-agent report
 [^tests]: Regression tests for every confirmed bypass

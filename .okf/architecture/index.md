@@ -8,4 +8,6 @@
 * [Enforcement sandbox (sandbox-runtime)](enforcement-sandbox.md) - OS-level file and network limits per agent using Anthropic's sandbox-runtime (macOS Seatbelt), the backstop for everything hooks cannot see.
 * [Organization backend, profiles and judge routing](org-backend-and-profiles.md) - FastAPI backend and React admin panel (Docker) that define profiles per role/user/agent, push signed bundles to each Mac, route grey-zone decisions to a corporate model, collect audit and approvals.
 * [Admin panel](admin-panel.md) - The React admin panel for organization administrators — overview, live activity, approvals, profile editor with judge modes, people and roles, devices and enrollment, corporate judge settings and playground, change log.
+* [Secret brokering](secret-brokering.md) - Agents only see {{senti:NAME}} placeholders; values from the Keychain are injected at execution by a one-time wrapper, restricted to allowed hosts and masked in output.
+* [Local model gateway (DIY agents)](model-gateway.md) - OpenAI-compatible proxy on 127.0.0.1:11435 in front of Ollama/LM Studio that checks every tool call a model proposes before a hook-less agent sees it.
 * [Senti macOS app](macos-app.md) - *(superseded by ADR-010)* Planned native SwiftUI menu-bar app — approval popup, activity log, per-agent settings — that fronts the local engine.

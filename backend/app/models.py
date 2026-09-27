@@ -74,6 +74,7 @@ class EnrollmentCode(Base):
     role_id: Mapped[str] = mapped_column(ForeignKey("roles.id"), default="engineering")
     uses_left: Mapped[int] = mapped_column(Integer, default=100)
     expires_at: Mapped[float] = mapped_column(Float, default=0.0)  # 0 = never
+    email: Mapped[str] = mapped_column(String(200), default="")  # optional: code only for this person
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     note: Mapped[str] = mapped_column(String(300), default="")
 

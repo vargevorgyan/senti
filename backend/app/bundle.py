@@ -36,7 +36,7 @@ def resolve(db: Session, device: Device) -> dict:
     role = user.role_id
     profiles = db.query(Profile).order_by(Profile.priority.desc(), Profile.id).all()
     for_role = [p for p in profiles if not (p.data.get("applies_to") or {}).get("roles") or role in p.data["applies_to"]["roles"]]
-    default = for_role[0] if for_role else (profiles[0] if profiles else None)
+    default = for_role[0] if for_role else None  # no profile for this role → the Mac uses its strict built-in profile
     assignments: dict[str, str] = {}
     for agent in AGENTS:
         pick = next((p for p in for_role if agent in ((p.data.get("applies_to") or {}).get("agents") or [])), None)
@@ -54,7 +54,7 @@ def resolve(db: Session, device: Device) -> dict:
         "issued_at": time.time(),
         "device_id": device.id,
         "user": {"email": user.email, "name": user.name, "role": role},
-        "default": default.id if default else "personal",
+        "default": default.id if default else None,
         "assignments": assignments,
         "profiles": [profile_doc(p) for p in profiles if p.id in used],
     }

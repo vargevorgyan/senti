@@ -50,6 +50,8 @@ def create_app(engine: Engine) -> FastAPI:
     app = FastAPI(title="Senti engine", lifespan=lifespan)
     app.state.engine = engine
     token = hook_token(create=True)
+    if not token:
+        raise SystemExit("could not create the Senti hook token")
 
     @app.middleware("http")
     async def require_token(request: Request, call_next):
@@ -68,8 +70,10 @@ def create_app(engine: Engine) -> FastAPI:
             raise HTTPException(404, "unknown agent")
         try:
             ev = json.loads(await request.body() or b"{}")
+            if not isinstance(ev, dict):
+                raise ValueError("not an object")
         except Exception:
-            ev = {}
+            ev = {"hook_event_name": "PreToolUse", "tool_name": "", "tool_input": {}}  # unreadable → empty action → ask
         action = adapters.parse(agent, ev)
         from .identity import identify
         action.identity = await asyncio.to_thread(identify, agent, request.scope.get("senti.peer_pid"), action.cwd)

@@ -38,9 +38,10 @@ def voice(d: Decision) -> str:
 
 def _cmd(v: Any) -> str:
     if isinstance(v, list):
-        if len(v) >= 3 and v[0] in {"bash", "sh", "zsh", "/bin/bash", "/bin/sh", "/bin/zsh"} and v[1] in {"-lc", "-c"}:
+        import shlex
+        if len(v) == 3 and v[0] in {"bash", "sh", "zsh", "/bin/bash", "/bin/sh", "/bin/zsh"} and v[1] in {"-lc", "-c"}:
             return v[2]
-        return " ".join(str(x) for x in v)
+        return shlex.join(str(x) for x in v)
     return str(v or "")
 
 

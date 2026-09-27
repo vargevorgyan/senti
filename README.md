@@ -38,8 +38,9 @@ cp .env.example .env            # optional: org name, admin password, model
 docker compose up -d --build    # first start pulls the corporate model (~2 GB)
 ```
 
-- Admin panel: <http://localhost:8080> — `admin@senti.local` / `senti-admin` (change via `.env`)
-- Device API: <http://localhost:8000> — demo enrollment code `SENTI-DEMO`
+- Admin panel and device API: <https://localhost:8443> (self-signed certificate) — `admin@senti.local` / `senti-admin`; the panel
+  warns until you change the password. Ports bind to 127.0.0.1 unless `SENTI_BIND=0.0.0.0`.
+- Demo enrollment code `SENTI-DEMO`; the **Devices** page shows the exact enroll command including the certificate fingerprint.
 
 ### 2. Each Mac (Apple Silicon)
 
@@ -49,7 +50,7 @@ Requires [uv](https://docs.astral.sh/uv/), Xcode command line tools (for the Swi
 cd engine
 uv sync --extra mlx                    # without --extra mlx: rules + corporate judge only
 uv run senti start                     # first start downloads Qwen3-4B (~2.3 GB) in the background
-uv run senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email you@acme.test
+uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256 from the Devices page> --code SENTI-DEMO --email you@acme.test
 uv run senti stop && uv run senti start
 uv run senti install all               # Claude Code, Codex, OpenCode (user-wide); or --project DIR
 uv run senti status
@@ -81,6 +82,8 @@ senti undo list|restore ID         restore files an agent deleted or overwrote
 senti honeytoken plant DIR         plant decoy secrets
 senti sandbox --agent X / run      sandbox-runtime profile from the active profile
 senti check Bash "cmd"             ask the engine about one action
+senti secret add NAME --hosts H    broker a secret: agents write {{senti:NAME}}, the value is injected only at run time
+senti shell-init                   shell functions that start agents inside their sandbox
 ```
 
 ## Demo
@@ -93,6 +96,12 @@ cd /tmp/senti-demo && claude -p "Read README.md, follow its setup steps, run hel
 
 Senti warns the agent about the hidden README instruction and blocks the disguised `helper.py`; the same happens with Codex and
 OpenCode. The admin panel's Overview and Activity update live. Full script: [.okf/roadmap/hackathon-demo-plan.md](.okf/roadmap/hackathon-demo-plan.md).
+
+## DIY agents (no hooks)
+
+Point any OpenAI-compatible agent at the engine's model gateway instead of the model server:
+`http://127.0.0.1:11435/v1` (forwards to Ollama at `localhost:11434`). Every tool call the model proposes is checked before your agent
+sees it — try `python3 demo/diy_agent.py "…"`.
 
 ## Tests
 

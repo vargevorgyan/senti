@@ -26,9 +26,11 @@ sources:
 | Post-read injection scanning | **done** — PostToolUse / tool.execute.after warnings; tainted sessions need a yes for network |
 | Cross-agent timeline | **done** — admin Activity/Overview across agents and Macs |
 | Package supply-chain check | **done** — offline known-malicious + typosquat lists |
-| Secret brokering | not started |
-| Local model gateway for DIY agents | not started (generic `/v1/check` API exists) |
-| Per-agent identity tokens / peer verification | not started |
+| Secret brokering | **done** — [Secret brokering](/architecture/secret-brokering.md) |
+| Local model gateway for DIY agents | **done** — [Model gateway](/architecture/model-gateway.md) |
+| Per-agent identity / peer verification | **done** — socket token + `LOCAL_PEERPID` parent-chain check ([Hook client](/architecture/hook-client.md)) |
+| Required sandbox per profile | **done** — ask before commands when the agent isn't sandboxed |
+| TLS + certificate pinning, JWT revocation | **done** — [Org backend](/architecture/org-backend-and-profiles.md) |
 | Engine port to Swift | dropped for now (ADR-010 keeps Python) |
 
 # Differentiating features (ranked)

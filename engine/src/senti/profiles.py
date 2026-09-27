@@ -82,7 +82,7 @@ def path_matches(path: str, patterns: list[str], cwd: str = "/") -> str | None:
         pe = expand(p, cwd) if p.startswith(("~", "/", "$HOME")) else p
         if not pe.startswith("/"):
             # relative/unanchored pattern such as "**/.env*" matches anywhere
-            if glob_to_regex("**/" + pe.lstrip("./")).match(path):
+            if glob_to_regex("**/" + pe.removeprefix("./")).match(path):
                 return p
             continue
         rx = glob_to_regex(pe)
@@ -109,9 +109,15 @@ def _normalised_segments(cmd: str) -> list[str]:
     return out
 
 
-def cmd_matches(cmd: str, patterns: list[str]) -> str | None:
+def cmd_matches(cmd: str, patterns: list[str], all_segments: bool = False) -> str | None:
+    """deny/ask: any segment (or the whole command) matching is enough. allow (all_segments=True): every segment must match."""
     norm = " ".join(cmd.split())
     segs = _normalised_segments(cmd)
+    if all_segments:
+        if not segs:
+            return None
+        hits = [cmd_matches(sg, patterns) if len(_normalised_segments(sg)) <= 1 else None for sg in segs]
+        return hits[0] if all(hits) else None
     for p in patterns or []:
         if p.startswith("re:"):
             if re.search(p[3:], norm) or any(re.search(p[3:], sg) for sg in segs):
@@ -132,6 +138,7 @@ _RANKS = {
     "write": {"allow": 0, "ask": 1, "block": 2},
     "packages": {"allow": 0, "check_supply_chain": 1, "ask": 2, "block": 3},
     "ask_goes_to": {"user": 0, "owner": 1, "admin": 2},
+    "send_to_corporate": {"full": 0, "with_redacted_content": 1, "metadata_only": 2},
 }
 
 
@@ -172,8 +179,16 @@ def merge_override(base: dict, over: dict) -> dict:
             elif k in _RANKS:
                 dst[k] = _stricter(k, dst.get(k), v)
             # other keys are not overridable
-    if "judge" in over and isinstance(over["judge"], dict) and over["judge"].get("mode"):
-        out["judge"] = {**out.get("judge", {}), "mode": over["judge"]["mode"]}
+    if isinstance(over.get("judge"), dict):
+        j = dict(out.get("judge") or {})
+        if over["judge"].get("mode"):
+            j["mode"] = over["judge"]["mode"]
+        if over["judge"].get("instructions"):
+            j["instructions"] = "\n".join(x for x in (j.get("instructions", ""), over["judge"]["instructions"]) if x)
+        if over["judge"].get("send_to_corporate"):
+            j["send_to_corporate"] = _stricter("send_to_corporate", j.get("send_to_corporate", "metadata_only"),
+                                               over["judge"]["send_to_corporate"])
+        out["judge"] = j
     feats = dict(out.get("features") or {})
     for k, v in (over.get("features") or {}).items():
         feats[k] = bool(feats.get(k)) and bool(v) if k == "scope_contract" else bool(feats.get(k)) or bool(v)
@@ -241,7 +256,11 @@ def bundle_to_set(payload: dict) -> ProfileSet:
             p.setdefault(k, v)
         p["rules"] = {**PERSONAL_PROFILE["rules"], **(p.get("rules") or {})}
     profiles.setdefault("personal", PERSONAL_PROFILE)
-    return ProfileSet(profiles=profiles, default=payload.get("default") or next(iter(profiles)),
+    profiles.setdefault("strict-offline", STRICT_PROFILE)
+    default = payload.get("default")
+    if default not in profiles:
+        default = "strict-offline"  # the org assigned nothing to this role: strict, never the looser personal profile
+    return ProfileSet(profiles=profiles, default=default,
                       assignments=payload.get("assignments", {}), user=payload.get("user", {}),
                       fetched_at=time.time(), bundle_version=payload.get("version", 0), source="backend")
 
@@ -309,7 +328,7 @@ def evaluate(profile: dict, action: Action, facts: dict, project: str) -> tuple[
             decisions.append(_d("block", f"Runs `{m}`, which the '{name}' profile forbids", "shell_deny", "critical"))
         elif m := cmd_matches(cmd, shell.get("ask")):
             decisions.append(_d("ask", f"Runs `{m}`; the '{name}' profile asks before that", "shell_ask", "warning"))
-        elif m := cmd_matches(cmd, shell.get("allow")):
+        elif m := cmd_matches(cmd, shell.get("allow"), all_segments=True):
             decisions.append(_d("allow", f"Allowed by the '{name}' profile ({m})", "shell_allow"))
         so = shell.get("otherwise", "judge")
         if so == "block" and not any(d and d.verdict == "allow" for d in decisions):
@@ -322,7 +341,7 @@ def evaluate(profile: dict, action: Action, facts: dict, project: str) -> tuple[
         if host_like := cmd_matches(tool, mcp.get("deny")):
             decisions.append(_d("block", f"Uses the tool {tool}, which the '{name}' profile blocks ({host_like})", "mcp_deny",
                                 "critical"))
-        elif cmd_matches(tool, mcp.get("allow")):
+        elif cmd_matches(tool, mcp.get("allow"), all_segments=True):
             decisions.append(_d("allow", f"Uses an allowed tool ({tool})", "mcp_allow"))
         otherwise = _stricter_otherwise(otherwise, mcp.get("otherwise", "judge"))
 
