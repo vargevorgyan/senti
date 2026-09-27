@@ -20,7 +20,7 @@ from ..bundle import bump, profile_doc, resolve
 from ..bus import bus, sse
 from ..config import settings
 from ..db import get_db
-from ..models import KV, Admin, Approval, ChangeLog, Device, EnrollmentCode, Event, Profile, Role, User
+from ..models import KV, Admin, Approval, ChangeLog, Device, EnrollmentCode, Event, Invite, Profile, Role, User
 from ..seed import BASE_FEATURES
 from .device import _event_json, approval_json, corp_config
 
@@ -285,8 +285,10 @@ class UserIn(BaseModel):
 
 def user_json(u: User, db: Session) -> dict:
     devs = db.query(Device).filter_by(user_id=u.id, revoked=False).all()
+    last = db.query(Invite).filter_by(user_id=u.id).order_by(Invite.created_at.desc()).first()
     return {"id": u.id, "email": u.email, "name": u.name, "role_id": u.role_id, "agent_profiles": u.agent_profiles or {},
-            "devices": len(devs), "online": any(time.time() - d.last_seen < ONLINE_S for d in devs), "created_at": u.created_at}
+            "devices": len(devs), "online": any(time.time() - d.last_seen < ONLINE_S for d in devs), "created_at": u.created_at,
+            "invite": invite_json(last) if last else None}
 
 
 @router.get("/users")
@@ -341,6 +343,58 @@ def delete_user(uid: int, admin: Admin = Auth, db: Session = Depends(get_db)):
         u.agent_profiles = {}
     db.commit()
     bump(db, admin.email, "user.delete", email)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- personal invites (one person, one Mac, one use)
+class InviteIn(BaseModel):
+    hours: int = 0          # 0 = default (SENTI_INVITE_TTL_HOURS)
+    backend: str = ""       # the admin panel passes the URL Macs should use; only used to build the command
+
+
+def invite_json(i: Invite) -> dict:
+    now = time.time()
+    status = ("revoked" if i.revoked else "used" if i.used_at else "expired" if i.expires_at and i.expires_at < now else "pending")
+    return {"id": i.id, "status": status, "created_at": i.created_at, "created_by": i.created_by, "expires_at": i.expires_at,
+            "used_at": i.used_at, "used_hostname": i.used_hostname, "used_device_id": i.used_device_id}
+
+
+@router.post("/users/{uid}/invites", status_code=201)
+def create_invite(uid: int, body: InviteIn, admin: Admin = Auth, db: Session = Depends(get_db)):
+    from ..security import new_invite_key
+    u = db.get(User, uid)
+    if not u or "#deleted-" in u.email:
+        raise HTTPException(404, "user not found")
+    for old in db.query(Invite).filter_by(user_id=uid, used_at=0, revoked=False).all():
+        old.revoked = True  # a new invite replaces any unused one
+    key, h = new_invite_key()
+    hours = body.hours if body.hours > 0 else settings.invite_ttl_hours
+    inv = Invite(user_id=uid, key_hash=h, created_by=admin.email, expires_at=time.time() + hours * 3600)
+    db.add(inv)
+    db.commit()
+    db.add(ChangeLog(actor=admin.email, action="invite.create", target=u.email))
+    db.commit()
+    fp = _tls_fingerprint()
+    backend = body.backend.strip() or "<backend-url>"
+    command = f"senti enroll --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"
+    # the key is returned exactly once; only its hash is stored
+    return {**invite_json(inv), "key": key, "command": command}
+
+
+@router.get("/users/{uid}/invites")
+def list_invites(uid: int, admin: Admin = Auth, db: Session = Depends(get_db)):
+    return [invite_json(i) for i in db.query(Invite).filter_by(user_id=uid).order_by(Invite.created_at.desc()).all()]
+
+
+@router.delete("/invites/{iid}")
+def revoke_invite(iid: str, admin: Admin = Auth, db: Session = Depends(get_db)):
+    i = db.get(Invite, iid)
+    if not i:
+        raise HTTPException(404, "invite not found")
+    i.revoked = True
+    db.commit()
+    db.add(ChangeLog(actor=admin.email, action="invite.revoke", target=i.user.email))
+    db.commit()
     return {"ok": True}
 
 
@@ -404,6 +458,8 @@ def list_codes(admin: Admin = Auth, db: Session = Depends(get_db)):
 def create_code(body: CodeIn, admin: Admin = Auth, db: Session = Depends(get_db)):
     if not db.get(Role, body.role_id):
         raise HTTPException(422, "unknown role")
+    if not body.email.strip() and not settings.allow_shared_codes:
+        raise HTTPException(422, "shared codes are disabled: add the person on the People page and send them a personal invite")
     code = "SENTI-" + secrets.token_hex(3).upper() + "-" + secrets.token_hex(3).upper()
     c = EnrollmentCode(code=code, role_id=body.role_id, uses_left=max(1, body.uses) if not body.email else 1,
                        expires_at=time.time() + body.days * 86400 if body.days > 0 else 0, note=body.note,
@@ -594,16 +650,21 @@ def changelog(limit: int = 100, admin: Admin = Auth, db: Session = Depends(get_d
             for c in db.query(ChangeLog).order_by(ChangeLog.ts.desc()).limit(min(limit, 500)).all()]
 
 
-@router.get("/tls")
-def tls_info(admin: Admin = Auth):
-    """Certificate fingerprint for the enroll command (Macs pin it)."""
+def _tls_fingerprint() -> str:
     import hashlib
     import os
     import ssl
     path = settings.tls_cert
     if not path or not os.path.exists(path):
+        return ""
+    return hashlib.sha256(ssl.PEM_cert_to_DER_cert(open(path).read())).hexdigest()
+
+
+@router.get("/tls")
+def tls_info(admin: Admin = Auth):
+    """Certificate fingerprint for the enroll command (Macs pin it)."""
+    fp = _tls_fingerprint()
+    if not fp:
         return {"enabled": False, "https_port": settings.https_port}
-    der = ssl.PEM_cert_to_DER_cert(open(path).read())
-    fp = hashlib.sha256(der).hexdigest()
     return {"enabled": True, "https_port": settings.https_port, "fingerprint": fp,
             "fingerprint_colons": ":".join(fp[i:i + 2] for i in range(0, len(fp), 2)).upper()}

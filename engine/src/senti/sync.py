@@ -51,19 +51,22 @@ def check_transport(backend_url: str, insecure_http: bool = False) -> None:
                            "certificate) or pass --insecure-http for a lab setup")
 
 
-def enroll(backend_url: str, code: str, user_email: str, fingerprint: str = "", insecure_http: bool = False) -> Settings:
+def enroll(backend_url: str, code: str = "", user_email: str = "", fingerprint: str = "", insecure_http: bool = False,
+           invite: str = "") -> Settings:
+    """Join an organization with a personal invite key (preferred) or a legacy enrollment code + email."""
     s = Settings.load()
     check_transport(backend_url, insecure_http)
     s.backend_cert = pin_certificate(backend_url, fingerprint) if fingerprint and backend_url.startswith("https") else ""
-    r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/enroll", timeout=15, verify=tls_verify(s),
-                   json={"code": code, "user_email": user_email, "hostname": socket.gethostname(),
-                         "platform": f"{platform.system()} {platform.release()} {platform.machine()}"})
+    body = {"hostname": socket.gethostname(), "platform": f"{platform.system()} {platform.release()} {platform.machine()}"}
+    body.update({"invite": invite} if invite else {"code": code, "user_email": user_email})
+    r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/enroll", timeout=15, verify=tls_verify(s), json=body)
     if r.status_code >= 400:
         raise RuntimeError(f"enrollment failed: {r.status_code} {r.text[:300]}")
     d = r.json()
     s.backend_url = backend_url.rstrip("/")
     s.device_id, s.device_token = d["device_id"], d["device_token"]
-    s.backend_public_key, s.org_name, s.user_email = d["public_key"], d.get("org_name", ""), user_email
+    s.backend_public_key, s.org_name = d["public_key"], d.get("org_name", "")
+    s.user_email = (d.get("user") or {}).get("email") or user_email
     s.save()
     return s
 

@@ -38,7 +38,8 @@ the Mac in ~0.2 s and clears the engine's decision cache.
 
 # Flow
 
-1. `senti enroll --backend URL --code CODE --email E` → device token + org public key; the user is created with the code's role.
+1. The admin adds the person (People page) and sends the invite command; `senti enroll --backend URL --fingerprint FP --key sti_…`
+   → device token + org public key; the person and role come from the invite, not from anything the employee types.
 2. Engine fetches `GET /api/v1/device/profiles` (signed bundle: default profile + per-agent assignments + the profiles) and listens on `/api/v1/device/stream`.
 3. Agent action → hook → engine (~3 ms); profile = role profile, or a per-user per-agent override set by the admin, then narrowed by the profile's `agent_overrides` (delegation: never more than the user).
 4. Rules settle most actions locally; grey zone → judge named by the profile.
@@ -92,8 +93,14 @@ deterministically, and both judge prompts now say policy notes override the mode
   uses a 60-second single-purpose ticket, never the session token.
 - **Signed answers:** corporate judge verdicts and approval statuses carry an Ed25519 signature over the answer, a per-request
   nonce and the device id; the engine rejects unsigned, replayed or misdirected answers (fail closed).
-- **Enrollment:** the shared demo code is off unless `SENTI_DEMO_ENROLL_CODE` is set; a second Mac for an existing person needs a personal code (bound to their email); codes decrement atomically;
-  deleted people are retired (address freed, devices revoked, audit kept).
+- **Enrollment:** personal one-time **invite keys** (`sti_…`, 256-bit, only the SHA-256 is stored, shown once, bound to one
+  person, one use claimed atomically, 48 h expiry, a new invite revokes unused ones, admin sees "used on <host>"). Shared
+  multi-use codes are refused unless `SENTI_ALLOW_SHARED_CODES=true` (the opt-in demo code still works); legacy personal codes
+  (bound to an email) still work. Deleted people are retired (address freed, devices revoked, audit kept). Senti's own
+  secret scanner flags `sti_`/`sdt_` strings so agents can't leak them.
+- **Device API limits:** `/judge` only accepts a profile that is in the calling device's own bundle (another role's policy text
+  can't be pulled through the model); per-device rate limits on `/judge` (60/min) and `/approvals` (20/min), `429` beyond —
+  the engine treats that like any judge failure (ask).
 
 # Security
 
@@ -105,13 +112,13 @@ install unless set; admin changes recorded in the change log.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /devices/enroll` | Mac joins org with an enrollment code |
+| `POST /devices/enroll` | Mac joins org with a personal invite key (`invite`) or a legacy personal code (`code` + `user_email`) |
 | `GET /device/profiles`, `GET /device/stream` (SSE) | signed bundle, live push |
 | `POST /device/heartbeat` | engine status for the Devices page |
-| `POST /judge` | corporate judge gateway (profile instructions added server-side) |
+| `POST /judge` | corporate judge gateway (profile instructions added server-side; own profiles only; rate limited) |
 | `POST /events` | batched, idempotent audit upload |
 | `POST /approvals`, `GET /approvals/{id}` | route "ask" to owner/admin and poll |
-| `POST /auth/login`, `/admin/*` | admin API: overview, profiles, roles, users, devices, enrollment codes, events (+CSV), approvals, corporate model settings, playground, change log, SSE stream |
+| `POST /auth/login`, `/admin/*` | admin API: overview, profiles, roles, users, **invites** (`POST/GET /admin/users/{id}/invites`, `DELETE /admin/invites/{id}`), devices, enrollment codes, events (+CSV), approvals, corporate model settings, playground, change log, SSE stream |
 
 [^team-req]: Team requirement — hook → profile from backend → local or corporate LLM
 [^concept-draft]: Concept draft — policy server, role profiles, gateways

@@ -147,6 +147,9 @@ SECRET_VALUE_PATTERNS = {
     "Slack token": r"xox[baprs]-[A-Za-z0-9-]{10,}",
     "Stripe key": r"sk_live_[A-Za-z0-9]{20,}",
     "Google API key": r"AIza[0-9A-Za-z_-]{35}",
+    # Senti's own credentials: a personal invite key and a device token must never leave the Mac
+    "Senti invite key": r"\bsti_[A-Za-z0-9_-]{40,}",
+    "Senti device token": r"\bsdt_[A-Za-z0-9_-]{40,}",
 }
 
 

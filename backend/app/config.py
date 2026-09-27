@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     admin_password: str = "senti-admin"
     org_name: str = "Acme Corp"
     demo_enroll_code: str = ""  # set SENTI_DEMO_ENROLL_CODE for demos only (20 uses, 7 days)
+    # Shared (multi-use, not tied to a person) enrollment codes: off. Admins invite people instead (personal, one-time keys).
+    allow_shared_codes: bool = False
+    invite_ttl_hours: int = 48
+    # Per-device limits on the device API (requests per minute), so a leaked or rogue device can't burn the corporate model
+    judge_rpm: int = 60
+    approvals_rpm: int = 20
     cors_origins: str = "http://localhost:8080,http://localhost:5173"
     # corporate model (OpenAI-compatible chat completions endpoint, e.g. Ollama)
     corp_model_url: str = "http://localhost:11434/v1"

@@ -110,7 +110,7 @@ def test_revoked_device_rejected(client, admin_headers, device):
 
 
 def test_enrollment_codes_and_roles(client, admin_headers):
-    r = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "product", "uses": 2})
+    r = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "product", "email": "pm@acme.test"})
     code = r.json()["code"]
     r = client.post("/api/v1/devices/enroll", json={"code": code, "user_email": "pm@acme.test"})
     assert r.status_code == 200
@@ -161,7 +161,7 @@ def test_password_change_and_logout_all_revoke(client, admin_headers):
 
 
 def test_enroll_cannot_switch_role(client, admin_headers, device):
-    r = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "automation"})
+    r = client.post("/api/v1/admin/enrollment-codes", headers=admin_headers, json={"role_id": "automation", "email": "dev@acme.test"})
     assert client.post("/api/v1/devices/enroll", json={"code": r.json()["code"], "user_email": "dev@acme.test"}).status_code == 403
 
 

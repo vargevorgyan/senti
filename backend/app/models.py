@@ -79,6 +79,22 @@ class EnrollmentCode(Base):
     note: Mapped[str] = mapped_column(String(300), default="")
 
 
+class Invite(Base):
+    """A personal, one-time key an admin sends to one person to enroll one Mac. Only the SHA-256 of the key is stored."""
+    __tablename__ = "invites"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    created_by: Mapped[str] = mapped_column(String(200), default="")
+    expires_at: Mapped[float] = mapped_column(Float, default=0.0)
+    used_at: Mapped[float] = mapped_column(Float, default=0.0)
+    used_device_id: Mapped[str] = mapped_column(String(64), default="")
+    used_hostname: Mapped[str] = mapped_column(String(200), default="")
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    user: Mapped[User] = relationship()
+
+
 class Event(Base):
     __tablename__ = "events"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

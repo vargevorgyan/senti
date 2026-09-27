@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -171,7 +172,16 @@ def cmd_service(a) -> int:
 
 def cmd_enroll(a) -> int:
     from .sync import enroll
-    s = enroll(a.backend, a.code, a.email, a.fingerprint, a.insecure_http)
+    if not a.key and not (a.code and a.email):
+        print("Use the command from your administrator: senti enroll --backend URL --fingerprint FP --key sti_…", file=sys.stderr)
+        return 2
+    try:
+        s = enroll(a.backend, a.code or "", a.email or "", a.fingerprint, a.insecure_http, invite=a.key or "")
+    except (RuntimeError, httpx.HTTPError) as e:
+        msg = str(e)
+        m = re.search(r'"detail":\s*"([^"]+)"', msg)
+        print(f"Could not join the organization: {m.group(1) if m else msg}", file=sys.stderr)
+        return 1
     print(f"Enrolled in {s.org_name or 'organization'} as {s.user_email} (device {s.device_id}).")
     if _running():
         print("Restart the engine to connect: senti stop && senti start")
@@ -353,8 +363,9 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_service)
     s = sub.add_parser("enroll", help="join an organization")
     s.add_argument("--backend", required=True)
-    s.add_argument("--code", required=True)
-    s.add_argument("--email", required=True)
+    s.add_argument("--key", default="", help="personal one-time invite key from your administrator (sti_…)")
+    s.add_argument("--code", default="", help="legacy enrollment code (needs --email)")
+    s.add_argument("--email", default="")
     s.add_argument("--fingerprint", default="", help="SHA-256 fingerprint of the backend's TLS certificate (shown on the Devices page)")
     s.add_argument("--insecure-http", action="store_true", help="allow plain HTTP to a non-local backend (lab only)")
     s.set_defaults(fn=cmd_enroll)

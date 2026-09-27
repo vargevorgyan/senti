@@ -30,7 +30,9 @@ export interface ProfileData {
 }
 export interface Profile { id: string; name: string; description: string; priority: number; version: number; data: ProfileData; updated_at: number; updated_by: string }
 export interface Role { id: string; name: string; description: string; users: number }
-export interface User { id: number; email: string; name: string; role_id: string; agent_profiles: Record<string, string>; devices: number; online: boolean; created_at: number }
+export interface InviteStatus { id: string; status: 'pending' | 'used' | 'expired' | 'revoked'; created_at: number; expires_at: number; used_at: number; used_hostname: string }
+export interface NewInvite extends InviteStatus { key: string; command: string }
+export interface User { id: number; email: string; name: string; role_id: string; agent_profiles: Record<string, string>; devices: number; online: boolean; created_at: number; invite: InviteStatus | null }
 export interface Device {
   id: string; user: string; hostname: string; platform: string; enrolled_at: number; last_seen: number; online: boolean; revoked: boolean
   engine_version?: string; local_judge?: string; profiles_source?: string; bundle_version?: number; stats: Record<string, number>

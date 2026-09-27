@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Update**: Personal invite keys replace shared enrollment codes (admin adds a person → one-time, hashed, expiring key → `senti enroll --key`); `/judge` only accepts the device's own profiles and is rate limited per device, as are approvals — [Org backend](/architecture/org-backend-and-profiles.md).
 * **Creation**: [Real AI-agent incidents replayed through Senti](/research/agent-incidents.md) — 19 sourced incidents, replay harness and regression tests; ~15 new rules (agent bypass flags, infra destruction, git discards, home-wipe traps, hidden Unicode, injection patterns, MCP after injection).
 * **Update**: Business docs and AGENTS.md no longer describe a Mac UI app — Senti on the Mac is hooks/plugins + a local engine — [Business model](/business/business-model.md), [Value proposition](/business/value-proposition.md).
 * **Update**: Script detector hardening from a code + security review — flow-aware env-exfil, backdoor-key, download-and-run and personal-folder detectors; held-out attacks hard-blocked 3/8 → 8/8, routine scripts 11/12 → 12/12, simulation unchanged; judge prompt experiment regressed and was reverted; `senti stop` race and stale-pid fixes — [Detector hardening](/research/detector-hardening-2026-09-27.md).

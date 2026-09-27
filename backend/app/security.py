@@ -90,6 +90,42 @@ def current_admin(request: Request, authorization: str = Header(default=""), tok
     return admin
 
 
+def new_invite_key() -> tuple[str, str]:
+    """One-time personal enrollment key. Prefix `sti_` so secret scanners (including Senti's own) can recognise a leaked one."""
+    key = "sti_" + secrets.token_urlsafe(32)
+    return key, hash_key(key)
+
+
+def hash_key(key: str) -> str:
+    return hashlib.sha256(key.strip().encode()).hexdigest()
+
+
+class RateLimiter:
+    """Sliding one-minute window per key (device). In-memory: one backend process; resets on restart."""
+
+    def __init__(self) -> None:
+        import collections
+        import threading
+        self._hits: dict[str, collections.deque] = collections.defaultdict(collections.deque)
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, per_minute: int) -> bool:
+        if per_minute <= 0:
+            return True
+        now = time.time()
+        with self._lock:
+            q = self._hits[key]
+            while q and q[0] <= now - 60:
+                q.popleft()
+            if len(q) >= per_minute:
+                return False
+            q.append(now)
+            return True
+
+
+limiter = RateLimiter()
+
+
 def new_device_token() -> tuple[str, str]:
     tok = "sdt_" + secrets.token_urlsafe(32)
     return tok, hashlib.sha256(tok.encode()).hexdigest()

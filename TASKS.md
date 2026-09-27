@@ -121,3 +121,4 @@ cd admin && npx playwright test
 - 2026-09-27: ZCode and Antigravity support removed at the owner's request.
 - 2026-09-27: Incident research: 19 real agent incidents replayed, 38/38 harmful actions caught by rules; new rules added; simulation unchanged (22/22, 2/39 safe asked).
 - 2026-09-27: Script detector hardening (env-exfil, backdoor key, download-and-run, personal-folder upload, persistence) after code + security review; held-out attacks hard-blocked 3/8 → 8/8, routine scripts 12/12, simulation unchanged; `senti stop` race + stale-pid fixes; replay scripts fail loudly when the engine is down. Engine 218 tests.
+- 2026-09-27: Personal invite keys (People page → one-time `sti_` key, hashed, 48 h, `senti enroll --key`); shared codes off by default; `/judge` restricted to the device's own profiles; per-device rate limits on `/judge` and `/approvals`; clean `senti enroll` errors. Backend 38 tests, engine 261.

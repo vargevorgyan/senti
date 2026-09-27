@@ -1,26 +1,12 @@
-import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ago, api, type Code, type Device, type Role } from '../api'
-import { Icon, useLiveEvent, useLoad, useToast } from '../components/ui'
+import { Icon, useLiveEvent, useLoad } from '../components/ui'
 
 export default function Devices() {
   const devices = useLoad<Device[]>(() => api('/admin/devices'))
   const codes = useLoad<Code[]>(() => api('/admin/enrollment-codes'))
   const { data: roles } = useLoad<Role[]>(() => api('/admin/roles'))
-  const toast = useToast()
-  const [role, setRole] = useState('engineering')
-  const [codeEmail, setCodeEmail] = useState('')
   useLiveEvent(m => { if (m.type === 'device_enrolled') { devices.reload(); codes.reload() } })
-  const { data: tls } = useLoad<{ enabled: boolean; https_port: number; fingerprint?: string }>(() => api('/admin/tls'))
-  const backend = tls?.enabled ? `https://${window.location.hostname}:${tls.https_port}` : `${window.location.protocol}//${window.location.host}`
-  const code = codes.data?.[0]?.code ?? '<create a code below>'
-  const cmd = `senti enroll --backend ${backend}${tls?.fingerprint ? ` --fingerprint ${tls.fingerprint}` : ''} --code ${code} --email you@company.com`
-  const copy = (t: string) => navigator.clipboard.writeText(t).then(() => toast('Copied.'))
-  const newCode = async () => {
-    await api('/admin/enrollment-codes', { method: 'POST', body: { role_id: role, uses: 10, days: 7, email: codeEmail } })
-    codes.reload()
-    toast(codeEmail ? `Personal code created for ${codeEmail}. It works once within 7 days.` : 'New code created. It works 10 times within 7 days.')
-    setCodeEmail('')
-  }
   const revoke = async (d: Device) => {
     if (!confirm(`Revoke ${d.hostname}? It stops receiving profiles and its reports are refused.`)) return
     await api(`/admin/devices/${d.id}/revoke`, { method: 'POST' }); devices.reload()
@@ -30,13 +16,8 @@ export default function Devices() {
       <div className="page-head"><div className="grow"><h1>Devices</h1><p>Macs running the Senti engine for this organization. Each one keeps a signed copy of its profiles, so it stays protected even when it can’t reach this server.</p></div></div>
       <section className="panel">
         <h2>Enroll a Mac</h2>
-        <p className="small muted">On the Mac, install the engine and run this command. The person’s role comes from the code; the fingerprint pins this server’s certificate so the Mac only ever talks to it.</p>
-        <div className="copy"><pre className="mono">{cmd}</pre><button className="btn" onClick={() => copy(cmd)}><Icon name="copy" size={16} />Copy</button></div>
-        <div className="row">
-          <select value={role} onChange={e => setRole(e.target.value)} style={{ maxWidth: 220 }} aria-label="Role for new code">{(roles ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <input type="email" placeholder="Only for (optional) name@company.com" value={codeEmail} onChange={e => setCodeEmail(e.target.value)} style={{ maxWidth: 300 }} aria-label="Personal code for email" />
-          <button className="btn" onClick={newCode}><Icon name="key" size={16} />New enrollment code</button>
-        </div>
+        <p className="small muted">Macs join with a personal invite: add the person on <Link to="/people">People and roles</Link> and send them the command shown there. Each invite works once, on one Mac, and expires, so a leaked message can't let anyone else in.</p>
+        <Link className="btn" to="/people"><Icon name="key" size={16} />Invite someone</Link>
         {(codes.data ?? []).length > 0 && (
           <div className="table-wrap" style={{ border: 'none' }}>
             <table>
@@ -54,7 +35,7 @@ export default function Devices() {
         <table>
           <thead><tr><th>Mac</th><th>Person</th><th>Status</th><th>Local judge</th><th>Profiles</th><th>Decisions</th><th /></tr></thead>
           <tbody>
-            {(devices.data ?? []).length === 0 && <tr><td colSpan={7}><div className="empty">No Macs enrolled yet. Run the command above on a Mac.</div></td></tr>}
+            {(devices.data ?? []).length === 0 && <tr><td colSpan={7}><div className="empty">No Macs enrolled yet. Invite someone from People and roles.</div></td></tr>}
             {(devices.data ?? []).map(d => (
               <tr key={d.id} style={d.revoked ? { opacity: .55 } : undefined}>
                 <td><b>{d.hostname || 'Unnamed Mac'}</b><br /><span className="small muted">{d.platform}{d.engine_version ? `, engine ${d.engine_version}` : ''}</span></td>

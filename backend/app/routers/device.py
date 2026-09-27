@@ -11,30 +11,36 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .. import corporate
-from ..bundle import signed_bundle
+from ..bundle import resolve, signed_bundle
 from ..bus import bus, sse
 from ..config import settings
 from ..db import get_db
-from ..models import KV, Approval, Device, EnrollmentCode, Event, Profile, User
-from ..security import current_device, new_device_token
+from ..models import KV, Approval, Device, EnrollmentCode, Event, Invite, Profile, User
+from ..security import current_device, hash_key, limiter, new_device_token
 from ..signing import public_key_b64, sign
 
 router = APIRouter(prefix="/api/v1")
 
 
 class EnrollIn(BaseModel):
-    code: str
-    user_email: str
+    invite: str = ""      # personal one-time key from the admin (preferred)
+    code: str = ""        # legacy enrollment code (personal codes; shared ones only when explicitly allowed)
+    user_email: str = ""
     hostname: str = ""
     platform: str = ""
 
 
 @router.post("/devices/enroll")
 def enroll(body: EnrollIn, db: Session = Depends(get_db)):
+    if body.invite.strip():
+        return _enroll_with_invite(body, db)
     from sqlalchemy import update
     code = db.get(EnrollmentCode, body.code.strip())
     if code is None or code.uses_left <= 0 or (code.expires_at and code.expires_at < time.time()):
         raise HTTPException(403, "enrollment code is invalid or expired")
+    if not code.email and not settings.allow_shared_codes and code.code != settings.demo_enroll_code:
+        # a shared code is not tied to a person: if it leaks, anyone can join. Admins invite people instead.
+        raise HTTPException(403, "shared enrollment codes are disabled; ask your administrator for a personal invite")
     # atomic decrement: parallel requests can't over-spend a code
     if db.execute(update(EnrollmentCode).where(EnrollmentCode.code == code.code, EnrollmentCode.uses_left > 0)
                   .values(uses_left=EnrollmentCode.uses_left - 1)).rowcount != 1:
@@ -59,6 +65,28 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
     db.add(dev)
     db.commit()
     bus.publish("admin", {"type": "device_enrolled", "device_id": dev.id, "user": email, "hostname": dev.hostname})
+    return {"device_id": dev.id, "device_token": token, "public_key": public_key_b64(), "org_name": settings.org_name,
+            "user": {"email": user.email, "role": user.role_id}}
+
+
+def _enroll_with_invite(body: EnrollIn, db: Session) -> dict:
+    from sqlalchemy import update
+    now = time.time()
+    inv = db.query(Invite).filter_by(key_hash=hash_key(body.invite)).first()
+    if inv is None or inv.revoked or (inv.expires_at and inv.expires_at < now) or "#deleted-" in inv.user.email:
+        raise HTTPException(403, "invite key is invalid, expired or revoked; ask your administrator for a new one")
+    # atomic: two Macs racing with the same key can't both win
+    if inv.used_at or db.execute(update(Invite).where(Invite.id == inv.id, Invite.used_at == 0, Invite.revoked.is_(False))
+                                 .values(used_at=now, used_hostname=body.hostname[:200])).rowcount != 1:
+        raise HTTPException(403, "this invite key was already used; if that wasn't you, tell your administrator")
+    user = inv.user
+    token, h = new_device_token()
+    dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=now)
+    db.add(dev)
+    db.flush()
+    inv.used_device_id = dev.id
+    db.commit()
+    bus.publish("admin", {"type": "device_enrolled", "device_id": dev.id, "user": user.email, "hostname": dev.hostname})
     return {"device_id": dev.id, "device_token": token, "public_key": public_key_b64(), "org_name": settings.org_name,
             "user": {"email": user.email, "role": user.role_id}}
 
@@ -150,9 +178,14 @@ def corp_config(db: Session) -> dict:
 
 @router.post("/judge")
 async def judge(body: JudgeIn, dev: Device = Depends(current_device), db: Session = Depends(get_db)):
+    if not limiter.allow(f"judge:{dev.id}", settings.judge_rpm):
+        raise HTTPException(429, "too many judge requests from this device; slow down")
     cfg = corp_config(db)
     if not cfg.get("enabled", True):
         raise HTTPException(503, "the corporate judge is disabled by the administrator")
+    if body.profile_id and body.profile_id not in {p["id"] for p in resolve(db, dev)["profiles"]}:
+        # only this device's own profiles: another role's policy text must never reach the model on its behalf
+        raise HTTPException(403, "this profile is not assigned to this device")
     prof = db.get(Profile, body.profile_id) if body.profile_id else None
     instructions = ((prof.data.get("judge") or {}).get("instructions", "") if prof else "")
     try:
@@ -175,6 +208,8 @@ class ApprovalIn(BaseModel):
 
 @router.post("/approvals")
 def create_approval(body: ApprovalIn, dev: Device = Depends(current_device), db: Session = Depends(get_db)):
+    if not limiter.allow(f"approvals:{dev.id}", settings.approvals_rpm):
+        raise HTTPException(429, "too many approval requests from this device; slow down")
     a = Approval(device_id=dev.id, user_email=dev.user.email, agent=body.agent, tool=body.tool, summary=body.summary[:2000],
                  input=body.input, cwd=body.cwd[:500], profile_id=body.profile_id, rule=body.rule)
     db.add(a)
