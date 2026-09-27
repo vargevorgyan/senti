@@ -11,6 +11,7 @@ def make_user(client, admin_headers, email="anna@acme.test", role="product"):
 
 
 def make_invite(client, admin_headers, uid, **body):
+    body.setdefault("backend", "https://senti.acme.test:8443")
     r = client.post(f"/api/v1/admin/users/{uid}/invites", headers=admin_headers, json=body)
     assert r.status_code == 201, r.text
     return r.json()
@@ -24,7 +25,9 @@ def enroll_key(client, key, hostname="annas-mac"):
 def test_invite_enrolls_the_right_person_and_role(client, admin_headers):
     u = make_user(client, admin_headers)
     inv = make_invite(client, admin_headers, u["id"])
-    assert inv["key"].startswith("sti_") and inv["key"] in inv["command"] and "--key" in inv["command"]
+    assert inv["key"].startswith("sti_")
+    assert inv["link"] == f"https://senti.acme.test:8443/join#s=senti.acme.test:8443&k={inv['key']}"
+    assert inv["command"] == f"senti join '{inv['link']}'" and "--key" in inv["setup_command"]
     r = enroll_key(client, inv["key"])
     assert r.status_code == 200, r.text
     assert r.json()["user"] == {"email": "anna@acme.test", "role": "product"}
@@ -89,6 +92,9 @@ def test_invite_for_unknown_user_404(client, admin_headers):
 
 def test_invites_require_admin(client, admin_headers):
     u = make_user(client, admin_headers)
+    # signed in, but a cross-site request can't add the X-Requested-With header (CSRF)
+    assert client.post(f"/api/v1/admin/users/{u['id']}/invites", json={}).status_code == 403
+    client.cookies.clear()
     assert client.post(f"/api/v1/admin/users/{u['id']}/invites", json={}).status_code == 401
 
 

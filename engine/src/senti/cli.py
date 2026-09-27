@@ -342,46 +342,133 @@ def cmd_check(a) -> int:
     return 0
 
 
-# assistants Senti protects with hooks, detected by their command or their settings folder
-DETECT = {"claude": ("claude", ".claude"), "codex": ("codex", ".codex"), "opencode": ("opencode", ".config/opencode"),
-          "cursor": ("cursor-agent", ".cursor")}
+from .installers import DETECT, detected_agents  # noqa: E402,F401  (kept here for older imports)
 
 
-def detected_agents() -> list[str]:
-    home = Path(os.environ.get("HOME") or Path.home())
-    return [a for a, (exe, folder) in DETECT.items() if shutil.which(exe) or (home / folder).exists()]
+def parse_invite(link: str) -> dict:
+    """An invite link from the admin panel → backend URL, one-time key, certificate fingerprint (self-signed servers).
+        https://<join page>#s=<server[:port]>&k=sti_…[&fp=<sha256>]
+    Everything is checked strictly: a malformed link is refused rather than guessed at."""
+    from urllib.parse import parse_qs
+    link = link.strip().strip("'\"")
+    frag = link.split("#", 1)[1] if "#" in link else ""
+    q = {k: v[0] for k, v in parse_qs(frag, strict_parsing=False).items() if v}
+    server, key, fp = q.get("s", ""), q.get("k", ""), q.get("fp", "")
+    if not re.fullmatch(r"(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})?", server):
+        raise ValueError("the invite link has no valid server address")
+    if not re.fullmatch(r"sti_[A-Za-z0-9_-]{20,100}", key):
+        raise ValueError("the invite link has no valid invite key")
+    if fp and not re.fullmatch(r"[0-9a-f]{64}", fp.lower().replace(":", "")):
+        raise ValueError("the invite link has an invalid certificate fingerprint")
+    return {"backend": f"https://{server}", "key": key, "fingerprint": fp.lower().replace(":", "")}
 
 
-def cmd_setup(a) -> int:
-    """One step for employees: join the organization, start Senti, protect the assistants on this Mac, connect them to the
-    company server and start Senti at login. Safe to run again."""
+def _ask_yes_no(question: str) -> bool:
+    """Ask on the terminal itself: under `curl … | sh` stdin is the script, not the person."""
+    try:
+        with open("/dev/tty", "r+") as tty:
+            tty.write(question)
+            tty.flush()
+            return tty.readline().strip().lower() in {"y", "yes"}
+    except OSError:
+        return False
+
+
+def _join(backend: str, key: str, fingerprint: str, assume_yes: bool, insecure_http: bool = False) -> int:
+    """Show what the server says the invite is for, ask, then join with a new device key. 0 = joined."""
+    from . import sync
+    s = Settings.load()
+    if s.device_token and s.backend_url and s.backend_url.rstrip("/") != backend.rstrip("/"):
+        print(f"This Mac already belongs to {s.org_name or s.backend_url}. Senti never moves a Mac to another company "
+              "silently: run `senti unenroll` first if you really want to switch.", file=sys.stderr)
+        return 1
+    try:
+        trust = sync.server_trust(backend, fingerprint, insecure_http)
+        info = sync.invite_info(backend, key, trust)
+    except (RuntimeError, httpx.HTTPError, OSError) as e:
+        msg = str(e)
+        m = re.search(r'"detail":\s*"([^"]+)"', msg)
+        print(f"Could not check the invite: {m.group(1) if m else msg}", file=sys.stderr)
+        return 1
+    host = backend.removeprefix("https://").removeprefix("http://")
+    trust_line = "its own certificate, matching your invite" if fingerprint else "a publicly trusted certificate"
+    print(f"\nConnected to {host} ({trust_line}).\n\nThis server says:\n  Company   {info.get('org_name') or '?'}\n"
+          f"  You       {info.get('email')}  (role: {info.get('role')})\n")
+    question = (f"Join {info.get('org_name') or host}? Your AI assistants will follow its rules, and unclear actions "
+                "go to its AI filter. [y/N] ")
+    if not assume_yes and not _ask_yes_no(question):
+        print("Not joined. If this isn't your company, tell your administrator about the link.", file=sys.stderr)
+        return 1
+    try:
+        s = sync.enroll(backend, fingerprint=fingerprint, insecure_http=insecure_http, invite=key)
+    except (RuntimeError, httpx.HTTPError, OSError) as e:
+        msg = str(e)
+        m = re.search(r'"detail":\s*"([^"]+)"', msg)
+        print(f"Could not join the organization: {m.group(1) if m else msg}", file=sys.stderr)
+        return 1
+    where = "in the Secure Enclave" if s.device_key_type == "secure-enclave" else "in ~/.senti (this Mac has no Secure Enclave)"
+    print(f"1. Joined {s.org_name or host} as {s.user_email}. Device key created {where}.")
+    return 0
+
+
+def _finish_setup(a, joined_now: bool) -> int:
     import types
     from . import installers
-    s = Settings.load()
-    if s.device_token and s.backend_url.rstrip("/") == a.backend.rstrip("/"):
-        print(f"1. Already joined {s.org_name or a.backend} as {s.user_email}.")
-    else:
-        if cmd_enroll(a) != 0:
-            return 1
-        if _running():
-            cmd_stop(a)  # restart so the organization's rules apply right away
+    if joined_now and _running():
+        cmd_stop(a)  # restart so the organization's rules apply right away
     print("2. Starting Senti…")
     if not _running() and cmd_start(types.SimpleNamespace(foreground=False, no_llm=False)) != 0:
         return 1
     agents = detected_agents()
-    print(f"3. Protecting your AI assistants: {', '.join(agents) or 'none found yet (run senti setup again after installing one)'}")
+    print(f"3. Protecting your AI assistants: {', '.join(agents) or 'none found yet (Senti adds them as soon as you install one)'}")
     if agents and not installers.hook_binary().exists():
         installers.build_hook()
     for ag in agents:
         if ag in installers.INSTALL:
             print(f"   {ag:9s} → {installers.INSTALL[ag](None)}")
+    installers.mark_protected([ag for ag in agents if ag in installers.INSTALL])
     print("4. Connecting them to the company server:")
     cmd_connect(types.SimpleNamespace(assistant="all", remove=False))
-    if not a.no_service:
+    if not getattr(a, "no_service", False):
         print("5. Starting Senti automatically when you log in:")
         cmd_service(types.SimpleNamespace(action="install"))
-    print("Done. Restart your AI assistants once. Senti works quietly in the background from now on.")
+    print("Done. Restart your AI assistants once. Senti works quietly in the background from now on, at the office or anywhere else.")
     return 0
+
+
+def cmd_join(a) -> int:
+    """One step for employees, from the invite link: check the server, confirm the company, join, protect, connect."""
+    try:
+        inv = parse_invite(a.link)
+    except ValueError as e:
+        print(f"senti join: {e}. Copy the whole link from your invite.", file=sys.stderr)
+        return 2
+    s = Settings.load()
+    joined_now = False
+    if s.device_token and s.backend_url.rstrip("/") == inv["backend"]:
+        print(f"1. Already joined {s.org_name or inv['backend']} as {s.user_email}.")
+    else:
+        if _join(inv["backend"], inv["key"], inv["fingerprint"], a.yes) != 0:
+            return 1
+        joined_now = True
+    return _finish_setup(a, joined_now)
+
+
+def cmd_setup(a) -> int:
+    """The same as `senti join`, with the server, fingerprint and key given separately. Safe to run again."""
+    s = Settings.load()
+    joined_now = False
+    if s.device_token and s.backend_url.rstrip("/") == a.backend.rstrip("/"):
+        print(f"1. Already joined {s.org_name or a.backend} as {s.user_email}.")
+    elif a.key:
+        if _join(a.backend, a.key, a.fingerprint, getattr(a, "yes", False), a.insecure_http) != 0:
+            return 1
+        joined_now = True
+    else:
+        if cmd_enroll(a) != 0:  # legacy enrollment code + email
+            return 1
+        joined_now = True
+    return _finish_setup(a, joined_now)
 
 
 def cmd_mcp(a) -> int:
@@ -478,7 +565,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--email", default="")
     s.add_argument("--insecure-http", action="store_true")
     s.add_argument("--no-service", action="store_true", help="don't start Senti at login")
+    s.add_argument("--yes", action="store_true", help="don't ask before joining (scripts)")
     s.set_defaults(fn=cmd_setup)
+    s = sub.add_parser("join", help="join your company with the invite link from your administrator (one step)")
+    s.add_argument("link", help="the invite link, e.g. 'https://senti.acme.com/join#s=…&k=sti_…'")
+    s.add_argument("--yes", action="store_true", help="don't ask before joining (scripts)")
+    s.add_argument("--no-service", action="store_true", help="don't start Senti at login")
+    s.set_defaults(fn=cmd_join)
     s = sub.add_parser("mcp", help="local MCP server that forwards to the company server gateway (used by your assistants)")
     s.add_argument("--backend", default="", help="server URL (default: the organization this Mac joined)")
     s.add_argument("--token", default="", help="agent token (default: this Mac's enrollment)")

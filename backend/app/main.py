@@ -11,6 +11,7 @@ from .bus import bus
 from .config import settings
 from .db import Base, SessionLocal, engine, migrate
 from .routers import admin, auth, device, gateway
+from .security import client_ip, ip_allowed
 from .seed import seed
 from .signing import private_key
 
@@ -52,7 +53,27 @@ async def _warm_corporate_model() -> None:
         await asyncio.sleep(15)
 
 
-app = FastAPI(title="Senti org backend", version="0.2.0", lifespan=lifespan)
+class AdminAllowlist:
+    """The admin API and admin sign-in answer only callers from SENTI_ADMIN_ALLOW (default: this computer and private
+    networks). Macs, bots and the join endpoint are unaffected, so employees still connect from anywhere."""
+    PREFIXES = ("/api/v1/admin", "/api/v1/auth")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path", "").startswith(self.PREFIXES) \
+                and not ip_allowed(client_ip(scope), settings.admin_allow):
+            body = (b'{"detail":"The admin panel can only be opened from the company network or VPN. Ask the person who '
+                    b'installed Senti to add your address to SENTI_ADMIN_ALLOW."}')
+            await send({"type": "http.response.start", "status": 403, "headers": [(b"content-type", b"application/json")]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        await self.app(scope, receive, send)
+
+
+app = FastAPI(title="Senti org backend", version="0.3.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(AdminAllowlist)
 app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth.router)

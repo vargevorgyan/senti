@@ -176,11 +176,12 @@ def consistency_warnings(policy: CompiledPolicy, schema: dict[str, set[str]]) ->
     return warnings
 
 
-async def compile_policy(cfg: dict, text: str, root: Path, db_path: str) -> dict:
-    raw = parse(await call_model(cfg, PROMPT.format(inventory=inventory(root, db_path), policy=text[:8000])))
+async def compile_policy(cfg: dict, text: str, ops) -> dict:
+    """`ops` reads the shared data (app.gateway_client.RunnerOps): the backend itself never opens agent-controlled files."""
+    raw = parse(await call_model(cfg, PROMPT.format(inventory=await ops.inventory(), policy=text[:8000])))
     policy = CompiledPolicy.model_validate({"roles": raw.get("roles") or {}})
     if not policy.roles:
         raise ValueError("the model found no roles in the policy")
-    examples = evaluate_examples(policy, [e for e in raw.get("examples") or [] if isinstance(e, dict)], root, db_path)
-    warnings = dropped_items(raw, policy) + consistency_warnings(policy, db_schema(db_path))
+    examples = await ops.evaluate(policy.model_dump(), [e for e in raw.get("examples") or [] if isinstance(e, dict)])
+    warnings = dropped_items(raw, policy) + consistency_warnings(policy, await ops.db_schema())
     return {"compiled": policy.model_dump(), "examples": examples, "warnings": warnings}

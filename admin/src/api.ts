@@ -31,11 +31,12 @@ export interface ProfileData {
 export interface Profile { id: string; name: string; description: string; priority: number; version: number; data: ProfileData; updated_at: number; updated_by: string }
 export interface Role { id: string; name: string; description: string; users: number }
 export interface InviteStatus { id: string; status: 'pending' | 'used' | 'expired' | 'revoked'; created_at: number; expires_at: number; used_at: number; used_hostname: string }
-export interface NewInvite extends InviteStatus { key: string; command: string }
+export interface NewInvite extends InviteStatus { key: string; link: string; command: string; setup_command: string }
 export interface User { id: number; email: string; name: string; role_id: string; agent_profiles: Record<string, string>; devices: number; online: boolean; created_at: number; invite: InviteStatus | null; gateway_role: string }
 export interface Device {
   id: string; user: string; hostname: string; platform: string; enrolled_at: number; last_seen: number; online: boolean; revoked: boolean
   engine_version?: string; local_judge?: string; profiles_source?: string; bundle_version?: number; stats: Record<string, number>
+  key_type: 'secure-enclave' | 'software' | 'none'; assistants?: { detected: string[]; protected: string[]; unprotected: string[] }
 }
 export interface Approval {
   id: string; device_id: string; hostname: string; user: string; agent: string; tool: string; summary: string; input: Record<string, string>
@@ -45,8 +46,8 @@ export interface Code { code: string; role_id: string; uses_left: number; expire
 export interface Change { id: number; ts: number; actor: string; action: string; target: string; detail: Record<string, unknown> }
 export interface JudgeOut { verdict: Verdict; reason: string; p: Record<string, number>; model: string; ms: number }
 
-const KEY = 'senti.token'
-export const token = { get: () => localStorage.getItem(KEY) ?? '', set: (t: string) => localStorage.setItem(KEY, t), clear: () => localStorage.removeItem(KEY) }
+// The session is an HttpOnly cookie set by the server: page scripts never see it. Every call also sends a header that
+// other websites can't add, which the server requires for changes (CSRF protection).
 
 export class ApiError extends Error {
   status: number
@@ -56,11 +57,11 @@ export class ApiError extends Error {
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
     method: opts.method ?? 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token.get() ? { Authorization: `Bearer ${token.get()}` } : {}) },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'senti' },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   })
-  if (res.status === 401 && !path.startsWith('/auth/login')) {
-    token.clear()
+  if (res.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/two-factor') && path !== '/auth/me') {
     window.dispatchEvent(new Event('senti:logout'))
   }
   if (!res.ok) {

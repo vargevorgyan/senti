@@ -22,6 +22,10 @@ class Admin(Base):
     password_hash: Mapped[str] = mapped_column(String(300))
     token_version: Mapped[int] = mapped_column(Integer, default=0)  # bump → every issued JWT is revoked
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    # Two-factor sign-in (TOTP, required): the secret is set on first sign-in and enabled once a code is confirmed
+    totp_secret: Mapped[str] = mapped_column(String(64), default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_last_step: Mapped[int] = mapped_column(Integer, default=0)  # a code can't be used twice
 
 
 class Role(Base):
@@ -62,6 +66,10 @@ class Device(Base):
     hostname: Mapped[str] = mapped_column(String(200), default="")
     platform: Mapped[str] = mapped_column(String(200), default="")
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    # The Mac's device key (P-256, SubjectPublicKeyInfo DER, base64): every device request is signed with it, so a copied
+    # token alone is useless. key_type is what the Mac reports: "secure-enclave" (can't leave the chip) or "software".
+    public_key: Mapped[str] = mapped_column(Text, default="")
+    key_type: Mapped[str] = mapped_column(String(32), default="")
     enrolled_at: Mapped[float] = mapped_column(Float, default=time.time)
     last_seen: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[dict] = mapped_column(JSON, default=dict)

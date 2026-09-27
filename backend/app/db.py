@@ -42,8 +42,11 @@ def migrate(eng) -> None:
     """Tiny additive migrations for existing SQLite databases (create_all never alters tables)."""
     from sqlalchemy import inspect, text
     insp = inspect(eng)
-    wanted = {"admins": {"token_version": "INTEGER DEFAULT 0"}, "enrollment_codes": {"email": "VARCHAR(200) DEFAULT ''"},
-              "users": {"gateway_role": "VARCHAR(64) DEFAULT ''"}}
+    wanted = {"admins": {"token_version": "INTEGER DEFAULT 0", "totp_secret": "VARCHAR(64) DEFAULT ''",
+                         "totp_enabled": "BOOLEAN DEFAULT 0", "totp_last_step": "INTEGER DEFAULT 0"},
+              "enrollment_codes": {"email": "VARCHAR(200) DEFAULT ''"},
+              "users": {"gateway_role": "VARCHAR(64) DEFAULT ''"},
+              "devices": {"public_key": "TEXT DEFAULT ''", "key_type": "VARCHAR(32) DEFAULT ''"}}
     with eng.begin() as conn:
         for table, cols in wanted.items():
             if not insp.has_table(table):

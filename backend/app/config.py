@@ -29,13 +29,33 @@ class Settings(BaseSettings):
     policy_model_url: str = ""
     policy_model: str = ""
     policy_model_api_key: str = ""
-    cors_origins: str = "http://localhost:8080,http://localhost:5173"
+    # The admin panel and the device API are served from the same origin: no cross-origin browser access by default
+    cors_origins: str = ""
+    # Who may reach the admin API and admin sign-in (comma-separated IPs/CIDRs, or "any"). Macs, bots and the join
+    # endpoint stay reachable from anywhere; the admin side defaults to this computer and private networks (office, VPN).
+    admin_allow: str = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    # Failed sign-ins: an account is locked for lockout_minutes after login_max_failures; an IP after 4x that
+    login_max_failures: int = 5
+    lockout_minutes: int = 15
+    enroll_rpm_per_ip: int = 10   # join attempts and invite look-ups per IP per minute
+    # Device requests must be signed with the Mac's device key; allowed clock difference in seconds
+    device_sig_window_s: int = 300
+    # The address Macs use (goes into invite links), e.g. https://senti.acme.com:8443. Empty: the admin panel's own address.
+    public_url: str = ""
+    # Join page for invite links. Empty: the /join page of this server's admin panel.
+    join_page: str = ""
+    # Gateway tools run in the isolated runner container (Unix socket). Running them inside the backend process, next to
+    # the signing key and the database, is only for tests and development and must be switched on explicitly.
+    gateway_runner: str = ""
+    gateway_in_process: bool = False
+    tls_ca: str = ""         # path to the organization's own TLS CA certificate (self-signed deployments)
     # corporate model (OpenAI-compatible chat completions endpoint, e.g. Ollama)
     corp_model_url: str = "http://localhost:11434/v1"
     corp_model: str = "qwen2.5:3b"
     corp_model_api_key: str = ""
+    corp_model_enabled: bool = True  # false: no company AI yet; unclear actions are asked about or blocked
     corp_timeout_s: float = 25.0
-    token_ttl_hours: int = 12
+    token_ttl_hours: int = 8
     tls_cert: str = ""       # path to the TLS certificate served by the admin container
     https_port: int = 8443
 

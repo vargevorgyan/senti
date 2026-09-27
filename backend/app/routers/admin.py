@@ -379,11 +379,18 @@ def create_invite(uid: int, body: InviteIn, admin: Admin = Auth, db: Session = D
     db.add(ChangeLog(actor=admin.email, action="invite.create", target=u.email))
     db.commit()
     fp = _tls_fingerprint()
-    backend = body.backend.strip() or "<backend-url>"
-    # one step on the Mac: join, start, protect the assistants, connect the company server, start at login
-    command = f"senti setup --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"
+    backend = (settings.public_url or body.backend).strip().rstrip("/")
+    if not backend.startswith("https://"):
+        raise HTTPException(422, "set the address Macs use (SENTI_PUBLIC_URL, https://…) before inviting people")
+    # One link carries the server address, the one-time key and (self-signed servers only) the certificate fingerprint.
+    # Everything after "#" stays in the browser; the join page never sends it anywhere.
+    from urllib.parse import quote
+    host = backend.removeprefix("https://").split("/", 1)[0]
+    join_page = (settings.join_page or f"{backend}/join").rstrip("/")
+    link = f"{join_page}#s={quote(host, safe=':[]')}&k={key}" + (f"&fp={fp}" if fp else "")
     # the key is returned exactly once; only its hash is stored
-    return {**invite_json(inv), "key": key, "command": command}
+    return {**invite_json(inv), "key": key, "link": link, "command": f"senti join '{link}'",
+            "setup_command": f"senti setup --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"}
 
 
 @router.get("/users/{uid}/invites")
@@ -425,7 +432,14 @@ def device_json(d: Device) -> dict:
             "enrolled_at": d.enrolled_at, "last_seen": d.last_seen, "online": (time.time() - d.last_seen) < ONLINE_S and not d.revoked,
             "revoked": d.revoked, "engine_version": st.get("version"), "local_judge": (st.get("local_judge") or {}).get("state"),
             "profiles_source": (st.get("profiles") or {}).get("source"), "bundle_version": (st.get("profiles") or {}).get("bundle_version"),
-            "stats": st.get("stats") or {}}
+            "stats": st.get("stats") or {}, "key_type": d.key_type or "none",
+            "assistants": _assistants(st.get("assistants"))}
+
+
+def _assistants(v) -> dict:
+    """Reported by the Mac (untrusted): only lists of short names reach the admin panel."""
+    v = v if isinstance(v, dict) else {}
+    return {k: [str(x)[:40] for x in v.get(k)][:20] if isinstance(v.get(k), list) else [] for k in ("detected", "protected", "unprotected")}
 
 
 @router.get("/devices")
@@ -656,13 +670,22 @@ def changelog(limit: int = 100, admin: Admin = Auth, db: Session = Depends(get_d
 
 
 def _tls_fingerprint() -> str:
+    """SHA-256 Macs pin at join: the organization's own CA when Senti made the certificate (the server certificate can
+    then be renewed freely), the certificate itself for an older self-signed one, and nothing for a publicly trusted
+    certificate (normal verification applies)."""
     import hashlib
     import os
     import ssl
+
+    from cryptography import x509
+    if settings.tls_ca and os.path.exists(settings.tls_ca):
+        return hashlib.sha256(ssl.PEM_cert_to_DER_cert(open(settings.tls_ca).read())).hexdigest()
     path = settings.tls_cert
     if not path or not os.path.exists(path):
         return ""
-    return hashlib.sha256(ssl.PEM_cert_to_DER_cert(open(path).read())).hexdigest()
+    pem = open(path).read()
+    cert = x509.load_pem_x509_certificate(pem.encode())
+    return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest() if cert.issuer == cert.subject else ""
 
 
 @router.get("/tls")

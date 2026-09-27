@@ -39,9 +39,16 @@ def create_app(engine: Engine) -> FastAPI:
                       asyncio.create_task(heartbeat_loop(engine))]
 
         async def idle():
+            from . import installers
             while True:
                 await asyncio.sleep(60)
                 engine.local.maybe_unload()
+                try:  # an assistant installed after setup gets its hooks within a minute
+                    done = await asyncio.to_thread(installers.protect_new_assistants)
+                    if done:
+                        print(f"senti: now protecting {', '.join(done)} (restart it once)", flush=True)
+                except Exception as e:  # never let this stop the engine
+                    print(f"senti: could not protect a new assistant: {type(e).__name__}: {e}", flush=True)
         tasks.append(asyncio.create_task(idle()))
         yield
         for t in tasks:

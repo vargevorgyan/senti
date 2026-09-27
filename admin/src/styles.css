@@ -7,8 +7,8 @@
   --sage: #7C9A82; --sage-text: #4F6B56; --sage-soft: #E3ECE4;
   --link: var(--terracotta-text); --focus-ring: var(--terracotta-text);
   --rail: #2B1E18; --rail-ink: #F6EEE4; --rail-muted: #B8A89A; --rail-active: #3A2C24;
-  --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
-  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "DM Sans Variable", system-ui, sans-serif;
+  --font-sans: "DM Sans Variable", "DM Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
   --radius-sm: 6px; --radius-md: 12px; --radius-lg: 20px; --radius-pill: 999px;

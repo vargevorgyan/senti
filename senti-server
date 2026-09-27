@@ -36,6 +36,10 @@ confirm() {  # confirm "Question" (default yes)
 rand() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "${1:-24}" || true; }  # tr ends on SIGPIPE
 env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 || true; }
 compose() { docker compose -p "$PROJECT" "$@"; }
+# what runs: backend + admin panel + the isolated gateway runner (+ the private AI model when chosen)
+services() { if [ "$(env_get SENTI_AI_MODE)" = local ]; then echo "backend admin runner ollama"; else echo "backend admin runner"; fi; }
+up() { # shellcheck disable=SC2046
+  compose up -d $(services); }
 
 https_url() { printf 'https://%s:%s' "${1:-localhost}" "$(env_get SENTI_HTTPS_PORT | sed 's/^$/8443/')"; }
 
@@ -91,6 +95,9 @@ Usage: ./senti-server install [options]      (without options it asks, with sens
   --admin-email EMAIL      admin login (default admin@<company>.local)
   --admin-password PASS    admin password (default: a random one, shown once)
   --network local|lan      local = only this computer (testing); lan = reachable by the team (default)
+  --public-host NAME       the address employees' Macs use, from anywhere: a domain (senti.acme.com) or public IP
+  --admin-allow LIST       who may open the admin panel: private (company network/VPN, default), local, any,
+                           or IPs/CIDRs such as 203.0.113.0/24 (the admin also needs an authenticator code)
   --host NAME[,NAME…]      extra host names / IPs for the certificate (detected automatically)
   --ai local|api|none      private model on this server / a model API you already use / none for now
   --ai-url URL --ai-model NAME --ai-key KEY      for --ai api (any OpenAI-compatible endpoint)
@@ -101,6 +108,7 @@ EOF
 
 cmd_install() {
   local ORG="" ADMIN_EMAIL="" ADMIN_PASSWORD="" NETWORK="" HOSTS="" AI="" AI_URL="" AI_MODEL="" AI_KEY="" HTTPS_PORT="" DEMO=""
+  local PUBLIC_HOST="" ADMIN_ALLOW=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes|-y) YES=1 ;;
@@ -109,6 +117,8 @@ cmd_install() {
       --admin-password) ADMIN_PASSWORD=$2; shift ;;
       --network) NETWORK=$2; shift ;;
       --host) HOSTS=$2; shift ;;
+      --public-host) PUBLIC_HOST=$2; shift ;;
+      --admin-allow) ADMIN_ALLOW=$2; shift ;;
       --ai) AI=$2; shift ;;
       --ai-url) AI_URL=$2; shift ;;
       --ai-model) AI_MODEL=$2; shift ;;
@@ -125,7 +135,9 @@ cmd_install() {
   [ -f docker-compose.yml ] || die "Run this from the Senti folder (docker-compose.yml not found)"
   need_docker
 
+  local existing=0
   if docker volume inspect "${PROJECT}_backend-data" >/dev/null 2>&1; then
+    existing=1
     warn "Senti is already installed on this machine (its data is kept)."
     confirm "Re-apply settings and restart it? Your data, people and Macs stay as they are" || exit 0
   fi
@@ -154,11 +166,46 @@ cmd_install() {
   local host ip; host=$(hostname 2>/dev/null || echo localhost); ip=$(primary_ip)
   local tls_hosts="localhost,127.0.0.1"
   if [ "$NETWORK" = lan ]; then
-    tls_hosts="$tls_hosts,$host${ip:+,$ip}${HOSTS:+,$HOSTS}"
-    ok "Reachable at https://${ip:-$host}:${HTTPS_PORT:-8443} (certificate for: $tls_hosts)"
+    say "  Employees work from anywhere: their Macs connect to this address over the internet (or VPN)."
+    ask PUBLIC_HOST "Address employees' Macs use (domain name like senti.acme.com, or a public IP)" "${ip:-$host}"
+    PUBLIC_HOST=$(printf '%s' "$PUBLIC_HOST" | sed 's#^https\{0,1\}://##; s#[:/].*$##')
+    case "$PUBLIC_HOST" in *[!A-Za-z0-9.-]*|"") die "The address must be a host name or IP, like senti.acme.com" ;; esac
+    tls_hosts="$tls_hosts,$host${ip:+,$ip},$PUBLIC_HOST${HOSTS:+,$HOSTS}"
+    ok "Macs connect to https://$PUBLIC_HOST:${HTTPS_PORT:-8443} (certificate for: $tls_hosts)"
+    say "  Make sure port ${HTTPS_PORT:-8443} of this server is reachable at that address (firewall / port forwarding)."
   else
+    PUBLIC_HOST=localhost
     ok "Only this computer: https://localhost:${HTTPS_PORT:-8443}"
   fi
+
+  step "Who may open the admin panel?"
+  if [ -z "$ADMIN_ALLOW" ] && [ "$NETWORK" = lan ] && [ "$YES" = 0 ] && [ -t 0 ]; then
+    say "  Whoever controls the admin panel controls every Mac's rules. Employees' Macs are not affected by this choice."
+    say "  1) Company network and VPN only (recommended)"
+    say "  2) Only this server"
+    say "  3) Specific addresses (your office's public IP range)"
+    say "  4) From anywhere (password + authenticator code only)"
+    local c; read -r -p "  Choose [1]: " c || true
+    case "${c:-1}" in
+      2) ADMIN_ALLOW=local ;;
+      3) ask ADMIN_ALLOW "IP addresses or ranges, comma-separated (e.g. 203.0.113.0/24)" "" ;;
+      4) ADMIN_ALLOW=any ;;
+      *) ADMIN_ALLOW=private ;;
+    esac
+  fi
+  [ "$NETWORK" = lan ] || ADMIN_ALLOW=${ADMIN_ALLOW:-local}
+  ADMIN_ALLOW=${ADMIN_ALLOW:-private}
+  local admin_allow
+  case "$ADMIN_ALLOW" in
+    private) admin_allow="127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7" ;;
+    local) admin_allow="127.0.0.0/8,::1/128" ;;
+    any) admin_allow=any; warn "The admin panel is open to the internet; it is protected by the password and the authenticator code" ;;
+    *) printf '%s' "$ADMIN_ALLOW" | grep -Eq '^[0-9A-Fa-f:.,/ ]+$' || die "Admin access must be private, local, any, or IP ranges"
+       admin_allow="127.0.0.0/8,::1/128,$(printf '%s' "$ADMIN_ALLOW" | tr -d ' ')" ;;
+  esac
+  # Docker Desktop (Mac) shows browser requests as coming from its own private gateway address
+  [ "$(uname -s)" = Darwin ] && [ "$ADMIN_ALLOW" = local ] && admin_allow="$admin_allow,192.168.65.0/24,172.16.0.0/12"
+  ok "Admin panel: $ADMIN_ALLOW"
 
   step "AI that checks unclear actions"
   local ram disk; ram=$(mem_gb); disk=$(disk_gb)
@@ -191,7 +238,7 @@ cmd_install() {
   HTTPS_PORT=${HTTPS_PORT:-8443}
   local admin_port backend_port; admin_port=8081; backend_port=8000
   for p in "$HTTPS_PORT" "$admin_port" "$backend_port"; do
-    if port_busy "$p" && ! compose ps --status running 2>/dev/null | grep -q "$PROJECT"; then
+    if port_busy "$p" && ! compose ps --status running 2>/dev/null | grep "$PROJECT" >/dev/null; then
       die "Port $p is already in use by another program. Free it, or pass --https-port with another number"
     fi
   done
@@ -214,8 +261,14 @@ SENTI_BACKEND_PORT=$backend_port
 SENTI_CORP_MODEL_URL=$AI_URL
 SENTI_CORP_MODEL=$AI_MODEL
 SENTI_CORP_MODEL_API_KEY=$AI_KEY
+SENTI_CORP_MODEL_ENABLED=$([ "$AI" = none ] && echo false || echo true)
 SENTI_GATEWAY_DIR=./server-data
 SENTI_AI_MODE=$AI
+# Address in invite links (Macs connect here from anywhere), and who may open the admin panel
+SENTI_PUBLIC_URL=https://$PUBLIC_HOST:$HTTPS_PORT
+SENTI_ADMIN_ALLOW=$admin_allow
+# Invite links open this page (empty: this server's own /join page; or your website's join page)
+SENTI_JOIN_PAGE=$(env_get SENTI_JOIN_PAGE)
 EOF
   umask 022
   mkdir -p server-data
@@ -223,27 +276,16 @@ EOF
 
   step "Building and starting Senti (first time: a few minutes)"
   compose build --quiet 2>&1 | tail -5 || die "Build failed; see the messages above"
-  if [ "$AI" = local ]; then compose up -d; else compose up -d backend admin; fi
+  up
   say "  Waiting for Senti to answer…"
   local url; url="https://localhost:$HTTPS_PORT"
   for _ in $(seq 90); do curl -skf "$url/api/v1/health" >/dev/null 2>&1 && break; sleep 2; done
   curl -skf "$url/api/v1/health" >/dev/null 2>&1 || die "Senti didn't start. Run ./senti-server logs to see why"
   ok "Senti is running"
 
-  local token
-  token=$(curl -sk "$url/api/v1/auth/login" -H 'content-type: application/json' \
-          -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-  if [ -z "$token" ]; then
-    warn "Could not sign in with the new password: this Senti already had an admin. Use your existing login,"
-    warn "or run ./senti-server reset-password"
-  elif [ "$AI" = none ]; then
-    curl -sk -X PUT "$url/api/v1/admin/settings/corporate-model" -H "Authorization: Bearer $token" \
-         -H 'content-type: application/json' -d "{\"url\":\"$AI_URL\",\"model\":\"$AI_MODEL\",\"enabled\":false}" >/dev/null || true
-    ok "No AI model for now: unclear actions will be asked about or blocked"
-  fi
-
+  [ "$AI" = none ] && ok "No AI model for now: unclear actions will be asked about or blocked"
   if [ "$DEMO" = yes ]; then
-    compose exec -T backend python - /srv < demo/make-server-data.py >/dev/null && ok "Demo company data added (fake)"
+    compose exec -T -u 10001 runner python - /srv < demo/make-server-data.py >/dev/null && ok "Demo company data added (fake)"
   fi
 
   # the password must not stay on disk; the admin account now exists in Senti's database
@@ -256,17 +298,19 @@ EOF
 ${C_G}${C_B}Senti is ready.${C_0}
 
   Admin panel   https://$where:$HTTPS_PORT
-  Sign in       $ADMIN_EMAIL
-  Password      $( [ "$generated" = 1 ] && echo "$ADMIN_PASSWORD   ${C_Y}← save it now, it is shown only once${C_0}" || echo "(the one you typed)")
+  Sign in       $( [ "$existing" = 1 ] && echo "your existing admin account (forgot it? ./senti-server reset-password)" || echo "$ADMIN_EMAIL")
+  Password      $( if [ "$existing" = 1 ]; then echo "unchanged"; elif [ "$generated" = 1 ]; then echo "$ADMIN_PASSWORD   ${C_Y}← save it now, it is shown only once${C_0}"; else echo "(the one you typed)"; fi)
 
   Your browser will warn about the certificate the first time: Senti made its own, and that's expected.
   ${fp:+Certificate fingerprint (to compare): $fp}
+  At the first sign-in you'll scan a QR code with an authenticator app; every sign-in then needs its code.
 
 Next steps (all in the admin panel):
-  1. People and roles → "Add person and invite" → send them their one-time command.
+  1. People and roles → "Add person and invite" → send them the invite link (works once, 48 hours).
   2. Server gateway → describe in plain English what AI agents may do on this server → Generate rules → Approve.
   3. Server gateway → Add agent → copy the connect command into Claude Code or your bot.
 
+Employees' Macs connect to https://$PUBLIC_HOST:$HTTPS_PORT from anywhere; the admin panel only from: $ADMIN_ALLOW.
 Manage Senti:  ./senti-server status | logs | backup | update | reset-password | uninstall
 EOF
 }
@@ -284,62 +328,77 @@ cmd_info() {
   else say "Admin panel:  $(https_url localhost)  (only this computer; reinstall and choose the network option to share it)"; fi
   say "Admin login:  $(env_get SENTI_ADMIN_EMAIL)"
   say "AI:           $(env_get SENTI_AI_MODE) ($(env_get SENTI_CORP_MODEL))"
+  say "Macs use:     $(env_get SENTI_PUBLIC_URL)  (from anywhere)"
+  say "Admin from:   $(env_get SENTI_ADMIN_ALLOW)"
   compose logs admin 2>/dev/null | sed -n 's/.*\([Ff]ingerprint=[0-9A-F:]*\).*/Certificate:  \1/p' | tail -1
 }
 
+backup_passphrase() {  # SENTI_BACKUP_PASSPHRASE for scripts, otherwise asked twice
+  if [ -n "${SENTI_BACKUP_PASSPHRASE:-}" ]; then return; fi
+  [ -t 0 ] || die "Set SENTI_BACKUP_PASSPHRASE to back up or restore without a terminal"
+  local a b
+  read -r -s -p "  Backup passphrase (keep it safe; without it the backup can't be opened): " a; echo
+  if [ "${1:-}" = new ]; then
+    [ ${#a} -ge 12 ] || die "Use at least 12 characters for the backup passphrase"
+    read -r -s -p "  Same passphrase again: " b; echo
+    [ "$a" = "$b" ] || die "The passphrases don't match"
+  fi
+  export SENTI_BACKUP_PASSPHRASE="$a"
+}
+encrypt() { openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:SENTI_BACKUP_PASSPHRASE "$@"; }
+
 cmd_backup() {
   need_docker >/dev/null
-  local file=${1:-senti-backup-$(date +%Y%m%d-%H%M%S).tar.gz}
-  step "Backing up to $file"
+  command -v openssl >/dev/null || die "openssl is needed to encrypt backups"
+  local file=${1:-senti-backup-$(date +%Y%m%d-%H%M%S).tar.gz.enc}
+  case "$file" in *.enc) ;; *) file="$file.enc" ;; esac
+  step "Backing up to $file (encrypted)"
+  backup_passphrase new
   compose stop backend >/dev/null
-  docker run --rm -v "${PROJECT}_backend-data:/data/backend" -v "${PROJECT}_tls:/data/tls" -v "$PWD:/out" alpine \
-    sh -c "cp -a /out/.env /data/env 2>/dev/null; tar czf /out/$(basename "$file") -C /data backend tls env; rm -f /data/env" \
-    || { compose start backend >/dev/null; die "Backup failed"; }
-  if [ -d server-data ]; then (umask 077; tar czf "${file%.tar.gz}-server-data.tar.gz" server-data); fi
+  umask 077
+  # people, profiles, devices, audit log, signing key, TLS certificate + CA, settings: all encrypted before touching disk
+  if ! docker run --rm -v "${PROJECT}_backend-data:/data/backend:ro" -v "${PROJECT}_tls:/data/tls:ro" -v "$PWD/$ENV_FILE:/data/env:ro" \
+       alpine tar czf - -C /data backend tls env | encrypt -out "$file"; then
+    rm -f "$file"; compose start backend >/dev/null; die "Backup failed"
+  fi
+  if [ -d server-data ]; then tar czf - server-data | encrypt -out "${file%.tar.gz.enc}-server-data.tar.gz.enc"; fi
   compose start backend >/dev/null
-  chmod 600 "$(basename "$file")"
-  ok "Saved $(basename "$file") (people, profiles, devices, audit log, certificate; keep it private)"
-  [ -d server-data ] && ok "Saved ${file%.tar.gz}-server-data.tar.gz (files shared with agents)"
+  ok "Saved $file (encrypted; people, profiles, devices, audit log, keys, certificate)"
+  [ -d server-data ] && ok "Saved ${file%.tar.gz.enc}-server-data.tar.gz.enc (files shared with agents, encrypted)"
+  say "  Keep the passphrase separately: it is not stored anywhere."
 }
 
 cmd_restore() {
-  local file=${1:-}; [ -f "$file" ] || die "Usage: ./senti-server restore senti-backup-….tar.gz"
+  local file=${1:-}; [ -f "$file" ] || die "Usage: ./senti-server restore senti-backup-….tar.gz.enc"
   need_docker >/dev/null
   confirm "Replace the current Senti data with $file? This can't be undone" || exit 0
-  compose stop backend admin >/dev/null 2>&1 || true
-  docker run --rm -v "${PROJECT}_backend-data:/data/backend" -v "${PROJECT}_tls:/data/tls" -v "$(cd "$(dirname "$file")" && pwd):/in" alpine \
-    sh -c "rm -rf /data/backend/* /data/tls/*; tar xzf /in/$(basename "$file") -C /data backend tls" || die "Restore failed"
-  compose up -d backend admin >/dev/null
-  ok "Restored. Macs keep working: the certificate they trust was restored too"
+  local reader="cat"
+  case "$file" in *.enc) backup_passphrase; reader="decrypt" ;; esac
+  decrypt() { encrypt -d -in "$1"; }
+  # fail early on a wrong passphrase, before anything is replaced
+  if [ "$reader" = decrypt ]; then decrypt "$file" >/dev/null 2>&1 || die "Wrong passphrase or damaged backup"; fi
+  compose stop backend admin runner >/dev/null 2>&1 || true
+  $reader "$file" | docker run --rm -i -v "${PROJECT}_backend-data:/data/backend" -v "${PROJECT}_tls:/data/tls" alpine \
+    sh -c "rm -rf /data/backend/* /data/tls/*; tar xzf - -C /data backend tls" || die "Restore failed"
+  up >/dev/null
+  ok "Restored. Macs keep working: the certificate authority they trust was restored too"
 }
 
 cmd_reset_password() {
   need_docker >/dev/null
   local email pw; email=$(env_get SENTI_ADMIN_EMAIL); email=${1:-${email:-admin@senti.local}}
   pw=$(rand 20)
-  compose exec -T backend python - "$email" "$pw" <<'PY' || die "Could not reset the password (is Senti running?)"
-import sys
-from app.db import SessionLocal
-from app.models import Admin
-from app.security import hash_password
-email, pw = sys.argv[1], sys.argv[2]
-with SessionLocal() as db:
-    a = db.query(Admin).filter_by(email=email).first() or db.query(Admin).first()
-    if a is None:
-        sys.exit("no admin account")
-    a.password_hash = hash_password(pw)
-    a.token_version = (a.token_version or 0) + 1  # signs out every open session
-    db.commit()
-    print(a.email)
-PY
-  ok "New password for the admin account: $pw   ${C_Y}← save it now${C_0} (everyone signed in was signed out)"
+  compose exec -T -u 10001 backend python -m app.manage reset-admin "$email" "$pw" >/dev/null \
+    || die "Could not reset the password (is Senti running?)"
+  ok "New password for $email: $pw   ${C_Y}← save it now${C_0}"
+  say "  Everyone signed in was signed out, and the authenticator app is set up again at the next sign-in."
 }
 
 cmd_update() {
   need_docker >/dev/null
   if [ -d .git ]; then step "Getting the latest version"; git pull --ff-only || die "Could not update the code (local changes?)"; fi
   step "Rebuilding and restarting"
-  compose build --quiet && if [ "$(env_get SENTI_AI_MODE)" = local ]; then compose up -d; else compose up -d backend admin; fi
+  compose build --quiet && up
   ok "Updated. Your data, people and Macs are unchanged"
 }
 
@@ -365,7 +424,7 @@ main() {
     info) cmd_info ;;
     logs) need_docker >/dev/null; compose logs -f --tail 100 "$@" ;;
     stop) need_docker >/dev/null; compose stop; ok "Stopped (Macs keep protecting with their saved rules)" ;;
-    start) need_docker >/dev/null; if [ "$(env_get SENTI_AI_MODE)" = local ]; then compose up -d; else compose up -d backend admin; fi; ok "Started" ;;
+    start) need_docker >/dev/null; up; ok "Started" ;;
     update) cmd_update ;;
     backup) cmd_backup "$@" ;;
     restore) cmd_restore "$@" ;;

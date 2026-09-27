@@ -34,7 +34,9 @@ class Settings:
     device_id: str = ""
     device_token: str = ""
     backend_public_key: str = ""  # base64 Ed25519 public key pinned at enrollment
-    backend_cert: str = ""        # path of the backend's TLS certificate pinned at enrollment (self-signed deployments)
+    backend_cert: str = ""        # path of the TLS trust anchor pinned at enrollment (self-signed deployments)
+    backend_cert_kind: str = ""   # "ca": the organization's own CA (normal chain + hostname checks); "leaf": one certificate
+    device_key_type: str = ""     # "secure-enclave" or "software" (devicekey.py)
     agent_identity: str = "enforce"
     # local model gateway for DIY agents (OpenAI-compatible proxy, loopback only)
     gateway_enabled: bool = True
@@ -104,11 +106,14 @@ def hook_token(create: bool = False) -> str:
 
 
 def tls_verify(settings: "Settings"):
-    """httpx `verify=` value: the pinned certificate (exactly it is trusted), or normal CA verification."""
+    """httpx `verify=` value. Organization CA pinned at join: only certificates it issued, for the right host name, are
+    trusted (the server certificate can be renewed without re-joining). Older joins pinned one certificate. Otherwise:
+    normal public CA verification."""
     import ssl
     if settings.backend_cert and os.path.exists(settings.backend_cert):
         ctx = ssl.create_default_context(cafile=settings.backend_cert)
-        ctx.check_hostname = False  # the pinned certificate itself is the identity
-        ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        if settings.backend_cert_kind != "ca":
+            ctx.check_hostname = False  # the pinned certificate itself is the identity
+            ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
         return ctx
     return True

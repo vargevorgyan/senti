@@ -11,7 +11,7 @@ def start(tmp_path, monkeypatch, **env):
         monkeypatch.setenv(k, v)
     for m in [m for m in list(sys.modules) if m == "app" or m.startswith("app.")]:
         del sys.modules[m]
-    return TestClient(importlib.import_module("app.main").app)
+    return TestClient(importlib.import_module("app.main").app, client=("127.0.0.1", 50000))
 
 
 def test_empty_password_gets_a_random_one(tmp_path, monkeypatch, capsys):

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { token, type EventRow, type Verdict } from '../api'
+import { type EventRow, type Verdict } from '../api'
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const p: Record<string, ReactNode> = {
@@ -112,16 +112,17 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let stopped = false
     const open = async () => {
       if (stopped) return
-      let ticket = ''
-      try {
-        const r = await fetch('/api/v1/auth/stream-ticket', { method: 'POST', headers: { Authorization: `Bearer ${token.get()}` } })
-        if (r.status === 401) { token.clear(); window.dispatchEvent(new Event('senti:logout')); return }
-        ticket = (await r.json()).ticket
-      } catch { retry = window.setTimeout(open, 3000); return }
-      es = new EventSource(`/api/v1/admin/stream?token=${encodeURIComponent(ticket)}`)
+      // the session cookie goes with the EventSource request (same origin); no token in the URL
+      es = new EventSource('/api/v1/admin/stream')
       es.onopen = () => setConnected(true)
       es.onmessage = ev => { try { const m = JSON.parse(ev.data); subs.current.forEach(fn => fn(m)) } catch { /* keepalive */ } }
-      es.onerror = () => { setConnected(false); es?.close(); retry = window.setTimeout(open, 3000) }
+      es.onerror = () => {
+        setConnected(false); es?.close()
+        // signed out (session expired or ended elsewhere)? go back to the sign-in page instead of retrying forever
+        fetch('/api/v1/auth/me', { credentials: 'same-origin' })
+          .then(r => { if (r.status === 401) window.dispatchEvent(new Event('senti:logout')); else retry = window.setTimeout(open, 3000) })
+          .catch(() => { retry = window.setTimeout(open, 3000) })
+      }
     }
     open()
     return () => { stopped = true; es?.close(); window.clearTimeout(retry) }

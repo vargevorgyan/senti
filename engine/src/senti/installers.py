@@ -48,6 +48,22 @@ def build_hook(source: Path | None = None) -> Path:
     return dst
 
 
+def key_helper_binary() -> Path:
+    return senti_home() / "bin" / "senti-key"
+
+
+def build_key_helper(source: Path | None = None) -> Path:
+    """Compile the Secure Enclave key helper (hook/senti-key.swift). Without the Swift compiler there is no helper and the
+    device key falls back to a software key (see devicekey.py)."""
+    dst = key_helper_binary()
+    src = source or Path(__file__).resolve().parents[2] / "hook" / "senti-key.swift"
+    if not (shutil.which("swiftc") and src.exists()):
+        raise FileNotFoundError("swiftc or senti-key.swift missing")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["swiftc", "-O", str(src), "-o", str(dst)], check=True, capture_output=True)
+    return dst
+
+
 def _backup(p: Path) -> None:
     if p.exists():
         shutil.copy2(p, p.with_name(p.name + f".senti-backup-{time.strftime('%Y%m%d%H%M%S')}"))
@@ -358,6 +374,55 @@ def install_service(senti_exe: str) -> Path:
     subprocess.run(["launchctl", "unload", str(LAUNCH_AGENT)], capture_output=True)
     subprocess.run(["launchctl", "load", str(LAUNCH_AGENT)], check=False)
     return LAUNCH_AGENT
+
+
+# ---------------------------------------------------------------- which assistants are protected
+# assistants Senti protects with hooks, detected by their command or their settings folder
+DETECT = {"claude": ("claude", ".claude"), "codex": ("codex", ".codex"), "opencode": ("opencode", ".config/opencode"),
+          "cursor": ("cursor-agent", ".cursor")}
+
+
+def detected_agents() -> list[str]:
+    home = Path(os.environ.get("HOME") or Path.home())
+    return [a for a, (exe, folder) in DETECT.items() if shutil.which(exe) or (home / folder).exists()]
+
+
+def _protected_file() -> Path:
+    return senti_home() / "protected.json"
+
+
+def protected_agents() -> list[str]:
+    try:
+        return list(json.loads(_protected_file().read_text()).get("agents", []))
+    except (OSError, ValueError):
+        return []
+
+
+def mark_protected(agents: list[str]) -> None:
+    p = _protected_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"agents": sorted(set(protected_agents()) | set(agents)), "updated": time.time()}))
+
+
+def protect_new_assistants() -> list[str]:
+    """Hooks for assistants installed after setup. Runs in the engine every minute, only once `senti setup`/`senti join`
+    has run on this Mac (so nobody gets hooks they didn't ask for). Returns the assistants it just protected."""
+    if not _protected_file().exists():
+        return []
+    new = [a for a in detected_agents() if a in INSTALL and a not in protected_agents()]
+    if not new:
+        return []
+    if not hook_binary().exists():
+        build_hook()
+    done = []
+    for ag in new:
+        try:
+            INSTALL[ag](None)
+            done.append(ag)
+        except OSError:
+            continue
+    mark_protected(done)
+    return done
 
 
 def uninstall_service() -> None:

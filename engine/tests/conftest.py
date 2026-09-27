@@ -11,6 +11,9 @@ def senti_home(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTI_NO_GUI", "1")
     monkeypatch.setenv("SENTI_SOCKET", str(tmp_path / "s.sock"))
     home.mkdir()
+    # unit tests use software device keys (no Swift compile, no Secure Enclave); test_devicekey covers the real helper
+    from senti import devicekey
+    monkeypatch.setattr(devicekey, "helper", lambda: None)
     return home
 
 

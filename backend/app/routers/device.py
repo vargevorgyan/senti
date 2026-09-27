@@ -5,8 +5,8 @@ import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ from ..bus import bus, sse
 from ..config import settings
 from ..db import get_db
 from ..models import KV, Approval, Device, EnrollmentCode, Event, Invite, Profile, User
-from ..security import current_device, hash_key, limiter, new_device_token
+from ..security import client_ip, current_device, hash_key, limiter, load_device_key, new_device_token
 from ..signing import public_key_b64, sign
 
 router = APIRouter(prefix="/api/v1")
@@ -28,10 +28,60 @@ class EnrollIn(BaseModel):
     user_email: str = ""
     hostname: str = ""
     platform: str = ""
+    device_key: str = ""  # the Mac's P-256 public key (base64 DER); every later request is signed with it
+    key_type: str = ""    # "secure-enclave" or "software", as reported by the Mac
+
+
+def _limit_ip(request: Request) -> None:
+    if not limiter.allow(f"enroll-ip:{client_ip(request.scope)}", settings.enroll_rpm_per_ip):
+        raise HTTPException(429, "too many attempts from this network; wait a minute")
+
+
+def _checked_key(body: EnrollIn) -> tuple[str, str]:
+    try:
+        load_device_key(body.device_key.strip())
+    except ValueError as e:
+        raise HTTPException(422, f"{e}; update Senti on this Mac and join again")
+    kt = body.key_type if body.key_type in {"secure-enclave", "software"} else "software"
+    return body.device_key.strip(), kt
+
+
+def _valid_invite(db: Session, key: str) -> Invite:
+    inv = db.query(Invite).filter_by(key_hash=hash_key(key)).first()
+    if inv is None or inv.revoked or (inv.expires_at and inv.expires_at < time.time()) or "#deleted-" in inv.user.email:
+        raise HTTPException(403, "invite key is invalid, expired or revoked; ask your administrator for a new one")
+    if inv.used_at:
+        raise HTTPException(403, "this invite key was already used; if that wasn't you, tell your administrator")
+    return inv
+
+
+class InviteInfoIn(BaseModel):
+    invite: str
+
+
+@router.post("/devices/invite-info")
+def invite_info(body: InviteInfoIn, request: Request, db: Session = Depends(get_db)):
+    """What an invite is for, as this server sees it — shown to the person before the Mac joins, so a link that points to
+    somebody else's server can't pretend to be their company. Does not use up the key."""
+    _limit_ip(request)
+    inv = _valid_invite(db, body.invite)
+    return {"org_name": settings.org_name, "email": inv.user.email, "role": inv.user.role_id, "expires_at": inv.expires_at}
+
+
+@router.get("/tls/ca", response_class=PlainTextResponse)
+def tls_ca():
+    """This server's own certificate authority (self-signed deployments). Macs download it once over an unverified
+    connection and accept it only if its SHA-256 matches the fingerprint in their invite; after that every connection is
+    verified against it, and the server certificate can be renewed without re-joining."""
+    import os
+    if not settings.tls_ca or not os.path.exists(settings.tls_ca):
+        raise HTTPException(404, "this server uses a publicly trusted certificate")
+    return open(settings.tls_ca).read()
 
 
 @router.post("/devices/enroll")
-def enroll(body: EnrollIn, db: Session = Depends(get_db)):
+def enroll(body: EnrollIn, request: Request, db: Session = Depends(get_db)):
+    _limit_ip(request)
     if body.invite.strip():
         return _enroll_with_invite(body, db)
     from sqlalchemy import update
@@ -41,6 +91,7 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
     if not code.email and not settings.allow_shared_codes and code.code != settings.demo_enroll_code:
         # a shared code is not tied to a person: if it leaks, anyone can join. Admins invite people instead.
         raise HTTPException(403, "shared enrollment codes are disabled; ask your administrator for a personal invite")
+    device_key, key_type = _checked_key(body)
     # atomic decrement: parallel requests can't over-spend a code
     if db.execute(update(EnrollmentCode).where(EnrollmentCode.code == code.code, EnrollmentCode.uses_left > 0)
                   .values(uses_left=EnrollmentCode.uses_left - 1)).rowcount != 1:
@@ -61,7 +112,8 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
         db.add(user)
         db.flush()
     token, h = new_device_token()
-    dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=time.time())
+    dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=time.time(),
+                 public_key=device_key, key_type=key_type)
     db.add(dev)
     db.commit()
     bus.publish("admin", {"type": "device_enrolled", "device_id": dev.id, "user": email, "hostname": dev.hostname})
@@ -72,16 +124,16 @@ def enroll(body: EnrollIn, db: Session = Depends(get_db)):
 def _enroll_with_invite(body: EnrollIn, db: Session) -> dict:
     from sqlalchemy import update
     now = time.time()
-    inv = db.query(Invite).filter_by(key_hash=hash_key(body.invite)).first()
-    if inv is None or inv.revoked or (inv.expires_at and inv.expires_at < now) or "#deleted-" in inv.user.email:
-        raise HTTPException(403, "invite key is invalid, expired or revoked; ask your administrator for a new one")
+    inv = _valid_invite(db, body.invite)
+    device_key, key_type = _checked_key(body)
     # atomic: two Macs racing with the same key can't both win
     if inv.used_at or db.execute(update(Invite).where(Invite.id == inv.id, Invite.used_at == 0, Invite.revoked.is_(False))
                                  .values(used_at=now, used_hostname=body.hostname[:200])).rowcount != 1:
         raise HTTPException(403, "this invite key was already used; if that wasn't you, tell your administrator")
     user = inv.user
     token, h = new_device_token()
-    dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=now)
+    dev = Device(user_id=user.id, hostname=body.hostname[:200], platform=body.platform[:200], token_hash=h, last_seen=now,
+                 public_key=device_key, key_type=key_type)
     db.add(dev)
     db.flush()
     inv.used_device_id = dev.id
@@ -173,7 +225,8 @@ class JudgeIn(BaseModel):
 
 def corp_config(db: Session) -> dict:
     kv = db.get(KV, "corporate_model")
-    return kv.value if kv else {"url": settings.corp_model_url, "model": settings.corp_model, "api_key": "", "enabled": True}
+    return kv.value if kv else {"url": settings.corp_model_url, "model": settings.corp_model,
+                                "api_key": settings.corp_model_api_key, "enabled": settings.corp_model_enabled}
 
 
 @router.post("/judge")

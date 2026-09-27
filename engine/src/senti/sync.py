@@ -9,38 +9,93 @@ import asyncio
 import json
 import platform
 import socket
+import hashlib
 import time
 
 import httpx
 
 import os
 
-from .config import Settings, tls_verify
+from .config import Settings, senti_home, tls_verify
+from .devicekey import DeviceAuth
 from .models import Action, Decision
 from .profiles import bundle_to_set, save_cache, verify_bundle
 
 
-def _headers(s: Settings) -> dict:
-    return {"Authorization": f"Bearer {s.device_token}"}
+def _auth(s: Settings) -> DeviceAuth:
+    """Device token + a fresh signature by this Mac's device key on every request (devicekey.py)."""
+    return DeviceAuth(s.device_token)
 
 
-def pin_certificate(backend_url: str, fingerprint: str) -> str:
-    """Fetch the server certificate, compare its SHA-256 fingerprint and store it for pinning. Returns the PEM path."""
-    import hashlib
+def _fingerprint(fp: str) -> str:
+    return fp.lower().replace(":", "").replace("sha256", "").strip("= ")
+
+
+def fetch_ca(backend_url: str) -> str | None:
+    """The organization's own CA certificate, or None if the server has none (publicly trusted or older server).
+    Fetched without verification on purpose: the caller accepts it only if its fingerprint matches the invite."""
+    r = httpx.get(backend_url.rstrip("/") + "/api/v1/tls/ca", verify=False, timeout=10)  # noqa: S501 - checked by fingerprint
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    if r.text.count("BEGIN CERTIFICATE") != 1:
+        raise RuntimeError("the server sent an unexpected certificate authority")
+    return r.text
+
+
+def trusted_ca_pem(backend_url: str, fingerprint: str) -> str | None:
+    """The CA PEM if the server has one matching the fingerprint; None if the server has no CA. Raises on a mismatch."""
+    import ssl
+    pem = fetch_ca(backend_url)
+    if pem is None:
+        return None
+    got = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+    if got != _fingerprint(fingerprint):
+        raise RuntimeError(f"certificate fingerprint mismatch: server has {got}, invite says {_fingerprint(fingerprint)}. "
+                           "Not joining: this may not be your company's server.")
+    return pem
+
+
+def pin_certificate(backend_url: str, fingerprint: str) -> tuple[str, str]:
+    """Trust anchor for a self-signed server: its CA (preferred) or, for older servers, its certificate. The fingerprint
+    from the invite must match. Returns (path, "ca" | "leaf")."""
     import ssl
     from urllib.parse import urlparse
-    u = urlparse(backend_url)
-    pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
-    got = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
-    want = fingerprint.lower().replace(":", "").replace("sha256", "").strip("= ")
-    if got != want:
-        raise RuntimeError(f"certificate fingerprint mismatch: server has {got}, expected {want}. Not enrolling.")
-    from .config import senti_home
-    path = senti_home() / "backend-cert.pem"
+    path_ca = senti_home() / "backend-ca.pem"
+    pem = trusted_ca_pem(backend_url, fingerprint)
+    kind = "ca"
+    if pem is None:
+        u = urlparse(backend_url)
+        pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
+        got = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+        if got != _fingerprint(fingerprint):
+            raise RuntimeError(f"certificate fingerprint mismatch: server has {got}, expected {_fingerprint(fingerprint)}. Not enrolling.")
+        kind = "leaf"
+    path = path_ca if kind == "ca" else senti_home() / "backend-cert.pem"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(pem)
-    os.chmod(path, 0o600)
-    return str(path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(pem)
+    return str(path), kind
+
+
+def server_trust(backend_url: str, fingerprint: str, insecure_http: bool = False) -> Settings:
+    """Settings (not saved) that trust the server the way the invite says: its CA, or normal public verification."""
+    s = Settings.load()
+    check_transport(backend_url, insecure_http)
+    s.backend_cert, s.backend_cert_kind = ("", "")
+    if fingerprint and backend_url.startswith("https"):
+        s.backend_cert, s.backend_cert_kind = pin_certificate(backend_url, fingerprint)
+    return s
+
+
+def invite_info(backend_url: str, invite: str, s: Settings) -> dict:
+    """What the server says the invite is for (company, person, role). Shown before joining; doesn't use up the key."""
+    r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/invite-info", timeout=15, verify=tls_verify(s),
+                   json={"invite": invite})
+    if r.status_code >= 400:
+        raise RuntimeError(f"the server refused the invite: {r.status_code} {r.text[:300]}")
+    return r.json()
 
 
 def check_transport(backend_url: str, insecure_http: bool = False) -> None:
@@ -54,10 +109,11 @@ def check_transport(backend_url: str, insecure_http: bool = False) -> None:
 def enroll(backend_url: str, code: str = "", user_email: str = "", fingerprint: str = "", insecure_http: bool = False,
            invite: str = "") -> Settings:
     """Join an organization with a personal invite key (preferred) or a legacy enrollment code + email."""
-    s = Settings.load()
-    check_transport(backend_url, insecure_http)
-    s.backend_cert = pin_certificate(backend_url, fingerprint) if fingerprint and backend_url.startswith("https") else ""
-    body = {"hostname": socket.gethostname(), "platform": f"{platform.system()} {platform.release()} {platform.machine()}"}
+    from . import devicekey
+    s = server_trust(backend_url, fingerprint, insecure_http)
+    pub, key_type = devicekey.create()  # a new device key for this organization; the private half never leaves the Mac
+    body = {"hostname": socket.gethostname(), "platform": f"{platform.system()} {platform.release()} {platform.machine()}",
+            "device_key": pub, "key_type": key_type}
     body.update({"invite": invite} if invite else {"code": code, "user_email": user_email})
     r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/enroll", timeout=15, verify=tls_verify(s), json=body)
     if r.status_code >= 400:
@@ -67,6 +123,7 @@ def enroll(backend_url: str, code: str = "", user_email: str = "", fingerprint: 
     s.device_id, s.device_token = d["device_id"], d["device_token"]
     s.backend_public_key, s.org_name = d["public_key"], d.get("org_name", "")
     s.user_email = (d.get("user") or {}).get("email") or user_email
+    s.device_key_type = key_type
     s.save()
     return s
 
@@ -74,7 +131,7 @@ def enroll(backend_url: str, code: str = "", user_email: str = "", fingerprint: 
 async def fetch_profiles(engine) -> bool:
     s = engine.settings
     async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
-        r = await c.get(s.backend_url + "/api/v1/device/profiles", headers=_headers(s))
+        r = await c.get(s.backend_url + "/api/v1/device/profiles", auth=_auth(s))
         if r.status_code == 401:
             engine.backend_error = "device token rejected (device revoked?)"
             raise RuntimeError(engine.backend_error)
@@ -103,7 +160,7 @@ async def profile_loop(engine) -> None:
             await fetch_profiles(engine)
             backoff = 1.0
             async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=45), verify=tls_verify(s)) as c:
-                async with c.stream("GET", s.backend_url + "/api/v1/device/stream", headers=_headers(s)) as r:
+                async with c.stream("GET", s.backend_url + "/api/v1/device/stream", auth=_auth(s)) as r:
                     r.raise_for_status()
                     async for line in r.aiter_lines():
                         if line.startswith("data:"):
@@ -135,7 +192,7 @@ async def upload_loop(engine, interval: float = 3.0) -> None:
             if not batch:
                 continue
             async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
-                r = await c.post(s.backend_url + "/api/v1/events", headers=_headers(s), json={"events": batch})
+                r = await c.post(s.backend_url + "/api/v1/events", auth=_auth(s), json={"events": batch})
                 r.raise_for_status()
             engine.audit.mark_uploaded(offset)
         except asyncio.CancelledError:
@@ -149,7 +206,7 @@ async def heartbeat_loop(engine, interval: float = 30.0) -> None:
     while True:
         try:
             async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
-                await c.post(s.backend_url + "/api/v1/device/heartbeat", headers=_headers(s), json={"status": engine.status()})
+                await c.post(s.backend_url + "/api/v1/device/heartbeat", auth=_auth(s), json={"status": engine.status()})
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -164,7 +221,7 @@ async def request_approval(s: Settings, a: Action, d: Decision, profile: dict, t
     deadline = time.time() + timeout
     try:
         async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
-            r = await c.post(s.backend_url + "/api/v1/approvals", headers=_headers(s), json=body)
+            r = await c.post(s.backend_url + "/api/v1/approvals", auth=_auth(s), json=body)
             r.raise_for_status()
             aid = r.json()["id"]
             import secrets as _sec
@@ -172,7 +229,7 @@ async def request_approval(s: Settings, a: Action, d: Decision, profile: dict, t
             while time.time() < deadline:
                 await asyncio.sleep(1.5)
                 nonce = _sec.token_urlsafe(12)
-                r = await c.get(f"{s.backend_url}/api/v1/approvals/{aid}", headers=_headers(s), params={"nonce": nonce})
+                r = await c.get(f"{s.backend_url}/api/v1/approvals/{aid}", auth=_auth(s), params={"nonce": nonce})
                 if r.status_code == 200:
                     st = verified_payload(r.json(), s.backend_public_key, nonce, s.device_id)  # unsigned/forged → exception → block
                     if st.get("id") != aid:

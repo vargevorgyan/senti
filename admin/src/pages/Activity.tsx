@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AGENTS, agentName, api, clock, token, what, type EventRow } from '../api'
+import { AGENTS, agentName, api, clock, what, type EventRow } from '../api'
 import { Icon, Seg, VerdictPill, useLiveEvent } from '../components/ui'
 
 const PAGE = 50
@@ -37,7 +37,7 @@ export default function Activity() {
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); if (v) p.set(k, v); else p.delete(k); setParams(p) }
   const more = () => api(`/admin/events?${qs({ offset: offset + PAGE })}`).then(r => { setRows(x => [...x, ...r.items]); setOffset(offset + PAGE) })
   const exportCsv = async () => {
-    const res = await fetch(`/api/v1/admin/events.csv?${qs()}`, { headers: { Authorization: `Bearer ${token.get()}` } })
+    const res = await fetch(`/api/v1/admin/events.csv?${qs()}`, { credentials: 'same-origin' })
     const url = URL.createObjectURL(await res.blob())
     Object.assign(document.createElement('a'), { href: url, download: 'senti-events.csv' }).click()
     URL.revokeObjectURL(url)

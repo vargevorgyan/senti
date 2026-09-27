@@ -38,7 +38,8 @@ class RemoteJudge:
             async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify) as c:
                 import secrets
                 nonce = secrets.token_urlsafe(16)
-                r = await c.post(self.url, headers={"Authorization": f"Bearer {self.token}"},
+                from ..devicekey import DeviceAuth
+                r = await c.post(self.url, auth=DeviceAuth(self.token),  # token + device-key signature
                                  json={"profile_id": profile_id, "task": task, "action": action, "content": script,
                                        "facts": facts or {}, "nonce": nonce})
                 r.raise_for_status()

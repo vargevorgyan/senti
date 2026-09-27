@@ -116,8 +116,10 @@ export default function People() {
       {shown && (
         <section className="panel" aria-live="polite">
           <h2>Invite for {shown.user.name || shown.user.email}</h2>
-          <p className="small muted">Send this command to {shown.user.email} privately. It is shown only now, works once on one Mac, and expires {new Date(shown.invite.expires_at * 1000).toLocaleString()}. If they report that it was already used, revoke their Mac on the Devices page and send a new invite.</p>
-          <div className="copy"><pre className="mono">{shown.invite.command}</pre><button className="btn" onClick={() => copy(shown.invite.command)}><Icon name="copy" size={16} />Copy</button></div>
+          <p className="small muted">Send this link to {shown.user.email} privately (chat or email). It is shown only now, works once on one Mac, and expires {new Date(shown.invite.expires_at * 1000).toLocaleString()}. The link opens a page that tells them the one line to run. If they report that it was already used, revoke their Mac on the Devices page and send a new invite.</p>
+          <div className="copy"><pre className="mono" aria-label="Invite link">{shown.invite.link}</pre><button className="btn" onClick={() => copy(shown.invite.link)}><Icon name="copy" size={16} />Copy link</button></div>
+          <p className="small muted">Or send the command directly (Senti already installed on their Mac):</p>
+          <div className="copy"><pre className="mono" aria-label="Join command">{shown.invite.command}</pre><button className="btn" onClick={() => copy(shown.invite.command)}><Icon name="copy" size={16} />Copy command</button></div>
           <div className="row"><button className="btn ghost sm" onClick={() => revokeInvite(shown.invite.id)}>Revoke this invite</button><button className="btn ghost sm" onClick={() => setShown(null)}>Done</button></div>
         </section>
       )}

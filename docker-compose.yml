@@ -1,53 +1,91 @@
-# Senti organization side: backend API + admin panel + a small "corporate model".
+# Senti organization side: backend API + admin panel + isolated gateway runner + a small "corporate model".
 # The local engine and hooks run natively on each Mac (never in Docker).
 #
-#   cp .env.example .env   # optional: change passwords / model
-#   docker compose up -d --build
-#   admin panel:  https://localhost:8443  (admin@senti.local / senti-admin by default; self-signed certificate)
-#   device API:   https://localhost:8443  (the Devices page shows the enroll command with the certificate fingerprint)
+#   ./senti-server            # guided install (recommended): writes .env, starts everything, prints the next steps
+#   admin panel:  https://<server>:8443  (password + authenticator code; reachable only from SENTI_ADMIN_ALLOW)
+#   device API + MCP gateway: https://<server>:8443 from anywhere (every Mac request is signed by its device key)
 name: senti
+
+x-hardening: &hardening
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  # only what the entrypoint needs to hand folders to the unprivileged user before it drops root for good
+  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SETPCAP]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
 
 services:
   backend:
     build: ./backend
+    image: senti-backend:local
     restart: unless-stopped
+    <<: *hardening
     env_file: [{path: .env, required: false}]
     environment:
       SENTI_DATA_DIR: /data
       SENTI_CORP_MODEL_URL: ${SENTI_CORP_MODEL_URL:-http://ollama:11434/v1}
       SENTI_CORP_MODEL: ${SENTI_CORP_MODEL:-qwen2.5:3b}
-      SENTI_CORS_ORIGINS: ${SENTI_CORS_ORIGINS:-http://localhost:8080}
-      # shared demo code, off unless set (20 uses, 7 days); real Macs use codes from the Devices page
+      # shared demo code, off unless set (20 uses, 7 days); real Macs join with personal invites
       SENTI_DEMO_ENROLL_CODE: ${SENTI_DEMO_ENROLL_CODE:-}
       SENTI_TLS_CERT: /tls/cert.pem
+      SENTI_TLS_CA: /tls/ca.pem
       SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
-      # Server gateway (MCP): what agents may reach, only through Senti. Seed a demo: python3 demo/make-server-data.py server-data
-      SENTI_GATEWAY_ROOT: /srv/server-files
-      SENTI_GATEWAY_DB: /srv/server.db
+      # all gateway work (files, commands, SQL) happens in the runner container, over this socket
+      SENTI_GATEWAY_RUNNER: /run/senti-runner/runner.sock
       SENTI_POLICY_MODEL_URL: ${SENTI_POLICY_MODEL_URL:-}
       SENTI_POLICY_MODEL: ${SENTI_POLICY_MODEL:-}
       SENTI_POLICY_MODEL_API_KEY: ${SENTI_POLICY_MODEL_API_KEY:-}
     volumes:
       - backend-data:/data
+      - tls-public:/tls:ro          # public certificates only; the private keys stay in the admin container
+      - runner-sock:/run/senti-runner
+    # no published port: only nginx (admin container) reaches the backend
+
+  # The server gateway's hands: performs agents' file, command and SQL calls on the shared folder. No network, no secrets
+  # (no .env), no admin database, not root, read-only system, limited CPU/memory/processes. A command that slipped past
+  # the rules would find nothing worth taking here.
+  runner:
+    image: senti-backend:local   # the backend's image (built by the backend service), started as the runner
+    pull_policy: never
+    command: ["python", "-m", "app.runner"]
+    restart: unless-stopped
+    <<: *hardening
+    network_mode: none
+    environment:
+      SENTI_GATEWAY_RUNNER: /run/senti-runner/runner.sock
+      SENTI_GATEWAY_ROOT: /srv/server-files
+      SENTI_GATEWAY_DB: /srv/server.db
+      SENTI_DATA_DIR: /tmp/unused
+      SENTI_GATEWAY_CMD_TIMEOUT_S: "10"
+    volumes:
       - ${SENTI_GATEWAY_DIR:-./server-data}:/srv
-      - tls:/tls:ro
-    ports:
-      # Plain HTTP for local development only (always 127.0.0.1). Macs use https://HOST:8443 via the admin container.
-      - "127.0.0.1:${SENTI_BACKEND_PORT:-8000}:8000"
+      - runner-sock:/run/senti-runner
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.connect('/run/senti-runner/runner.sock')"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
   admin:
     build: ./admin
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, NET_BIND_SERVICE]
     depends_on:
       backend:
         condition: service_healthy
     environment:
-      # names/IPs the certificate is valid for (Macs pin it by fingerprint anyway)
+      # names/IPs the server certificate is valid for (Macs pin Senti's CA, so it can be renewed any time)
       SENTI_TLS_HOSTS: ${SENTI_TLS_HOSTS:-localhost,127.0.0.1}
     volumes:
       - tls:/tls
+      - tls-public:/tls-public
     ports:
-      # HTTPS for the admin panel and the device API (TLS by default); HTTP only redirects
+      # HTTPS for the admin panel, the device API and the MCP gateway; HTTP only redirects
       - "${SENTI_BIND:-127.0.0.1}:${SENTI_HTTPS_PORT:-8443}:443"
       - "${SENTI_BIND:-127.0.0.1}:${SENTI_ADMIN_PORT:-8081}:80"
 
@@ -56,6 +94,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
     environment:
       OLLAMA_KEEP_ALIVE: 30m
       OLLAMA_NUM_PARALLEL: "2"
@@ -78,5 +117,7 @@ services:
 
 volumes:
   tls:
+  tls-public:
   backend-data:
+  runner-sock:
   ollama-models:

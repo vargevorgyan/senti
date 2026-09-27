@@ -83,9 +83,21 @@ def test_bridge_sends_the_macs_token_and_pinned_certificate(tmp_path, monkeypatc
     s = Settings.load()
     s.backend_url, s.device_token = "https://srv.acme:8443", "sdt_mac"
     s.save()
+    from senti import devicekey
+    pub, _ = devicekey.create()
     seen = {}
 
     def handler(request):
+        import base64
+        import hashlib
+
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.serialization import load_der_public_key
+        h = request.headers
+        msg = "\n".join(["senti-device-v1", "POST", request.url.raw_path.decode(), h["x-senti-ts"], h["x-senti-nonce"],
+                         hashlib.sha256(request.content).hexdigest()]).encode()
+        load_der_public_key(base64.b64decode(pub)).verify(base64.b64decode(h["x-senti-signature"]), msg, ec.ECDSA(hashes.SHA256()))
         seen.update(auth=request.headers["authorization"], url=str(request.url))
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}})
     real = httpx.Client
@@ -116,3 +128,17 @@ def test_claude_code_is_added_with_add_json(tmp_path, monkeypatch):
     assert add[:6] == ["/usr/local/bin/claude", "mcp", "add-json", "--scope", "user", "company-server"]
     spec = json.loads(add[6])
     assert spec["type"] == "stdio" and spec["args"] == ["-m", "senti.cli", "mcp"] and spec["env"]["SENTI_HOME"].endswith(".senti")
+
+
+def test_bridge_without_a_device_key_explains_instead_of_sending_unsigned(tmp_path, monkeypatch):
+    from senti.config import Settings
+    s = Settings.load()
+    s.backend_url, s.device_token = "https://srv.acme:8443", "sdt_mac"
+    s.save()
+    sent = []
+    real = httpx.Client
+    monkeypatch.setattr(mcp_bridge.httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(200)), **{
+        k: v for k, v in kw.items() if k != "verify"}))
+    out = io.StringIO()
+    assert mcp_bridge.run(stdin=io.StringIO('{"jsonrpc":"2.0","id":1,"method":"ping"}\n'), stdout=out) == 0
+    assert sent == [] and "device key" in json.loads(out.getvalue())["error"]["message"]

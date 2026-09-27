@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { api, token } from './api'
+import { api } from './api'
 import { Icon, LiveProvider, ToastProvider, useLive, useLiveEvent, useToast } from './components/ui'
 import Activity from './pages/Activity'
 import Approvals from './pages/Approvals'
 import ChangeLog from './pages/ChangeLog'
 import Devices from './pages/Devices'
 import Gateway from './pages/Gateway'
+import Join from './pages/Join'
 import Judge from './pages/Judge'
 import Login from './pages/Login'
 import Overview from './pages/Overview'
@@ -42,11 +43,10 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const changePassword = async () => {
     const current = window.prompt('Current password')
     if (!current) return
-    const next = window.prompt('New password (at least 8 characters)')
+    const next = window.prompt('New password (at least 10 characters)')
     if (!next) return
     try {
-      const r = await api<{ token: string }>('/auth/password', { method: 'PUT', body: { current, new: next } })
-      token.set(r.token)
+      await api('/auth/password', { method: 'PUT', body: { current, new: next } })
       toast('Password changed. Every other session was signed out.')
     } catch (e: any) { toast(e.message, true) }
   }
@@ -110,16 +110,25 @@ function Shell({ onLogout }: { onLogout: () => void }) {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(!!token.get())
+  // The join page is public and static: it only reads the invite link in the browser.
+  if (window.location.pathname === '/join') return <Join />
+  return <AdminApp />
+}
+
+function AdminApp() {
+  const [authed, setAuthed] = useState<boolean | null>(null)
   useEffect(() => {
+    api('/auth/me').then(() => setAuthed(true)).catch(() => setAuthed(false))
     const out = () => setAuthed(false)
     window.addEventListener('senti:logout', out)
     return () => window.removeEventListener('senti:logout', out)
   }, [])
+  const logout = async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); setAuthed(false) }
+  if (authed === null) return null
   return (
     <ToastProvider>
       {authed
-        ? <LiveProvider><Shell onLogout={() => { token.clear(); setAuthed(false) }} /></LiveProvider>
+        ? <LiveProvider><Shell onLogout={logout} /></LiveProvider>
         : <Login onDone={() => setAuthed(true)} />}
     </ToastProvider>
   )

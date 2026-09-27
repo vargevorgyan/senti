@@ -2,7 +2,8 @@
 
 Why a bridge: AI assistants (Claude Code, Claude Desktop, Cursor, Codex, OpenCode) refuse the organization's self-signed
 certificate, and a token pasted into their config files is easy to leak. The bridge uses what the Mac already has from
-enrollment — the pinned certificate and the device token — so the assistant's config holds no secret at all:
+enrollment — the pinned certificate, the device token and the device key (every request is signed, so the token alone is
+useless elsewhere) — so the assistant's config holds no secret at all:
     {"command": "<python>", "args": ["-m", "senti.cli", "mcp"]}
 Bots without an enrolled Mac can use it too: senti mcp --backend URL --fingerprint FP --token sag_…
 """
@@ -23,7 +24,12 @@ NO_ACCESS = ("Senti: this Mac has no access to the company server. Ask your admi
 
 
 def pinned_context(backend_url: str, fingerprint: str) -> ssl.SSLContext:
-    """Trust exactly the server certificate with this SHA-256 fingerprint (nothing is written to disk)."""
+    """Trust the server's own CA with this SHA-256 fingerprint (or, for older servers, exactly its certificate).
+    Nothing is written to disk."""
+    from .sync import trusted_ca_pem
+    ca = trusted_ca_pem(backend_url, fingerprint)
+    if ca is not None:
+        return ssl.create_default_context(cadata=ca)
     u = urlparse(backend_url)
     pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
     got = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
@@ -51,6 +57,8 @@ def forward(client: httpx.Client, url: str, line: str) -> list[dict]:
         r = client.post(url, content=line)
     except httpx.HTTPError as e:
         return [] if msg_id is None else [_error(msg_id, -32000, f"Senti: can't reach the company server ({type(e).__name__})")]
+    except RuntimeError as e:  # no usable device key: never send the token unsigned
+        return [] if msg_id is None else [_error(msg_id, -32001, f"Senti: {e}")]
     if r.status_code in (401, 403):
         return [] if msg_id is None else [_error(msg_id, -32001, NO_ACCESS)]
     if r.status_code == 202 or not r.content:
@@ -77,10 +85,15 @@ def run(backend: str = "", token: str = "", fingerprint: str = "", stdin=None, s
               file=sys.stderr)
         return 2
     verify = pinned_context(base, fingerprint) if fingerprint else (tls_verify(s) if not backend else True)
-    headers = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json",
-               "Accept": "application/json, text/event-stream"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    if token:
+        headers["Authorization"] = f"Bearer {tok}"  # a bot's agent token (no Mac, no device key)
+        auth = None
+    else:
+        from .devicekey import DeviceAuth
+        auth = DeviceAuth(tok)  # this Mac: token + device-key signature on every message
     url = base + "/api/v1/mcp/"
-    with httpx.Client(verify=verify, headers=headers, timeout=120) as client:
+    with httpx.Client(verify=verify, headers=headers, timeout=120, auth=auth) as client:
         for line in stdin:
             line = line.strip()
             if not line:

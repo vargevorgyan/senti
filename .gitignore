@@ -43,3 +43,6 @@ server-data/
 senti-backup-*.tar.gz
 .env.bak.*
 .gstack/
+
+# Playwright sign-in state (authenticator secret of the test admin)
+admin/playwright-auth/

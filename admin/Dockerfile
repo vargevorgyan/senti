@@ -8,6 +8,8 @@ RUN npm run build
 FROM nginx:1.29-alpine
 RUN apk add --no-cache openssl
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx/security-headers.conf /etc/nginx/snippets/senti-security-headers.conf
+COPY nginx/proxy.conf /etc/nginx/snippets/senti-proxy.conf
 COPY tls-cert.sh /docker-entrypoint.d/10-senti-tls-cert.sh
 RUN chmod +x /docker-entrypoint.d/10-senti-tls-cert.sh
 COPY --from=build /app/dist /usr/share/nginx/html

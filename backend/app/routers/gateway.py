@@ -23,11 +23,11 @@ from .. import corporate, policy_compiler
 from ..bus import bus
 from ..config import settings
 from ..db import SessionLocal, get_db
-from ..gateway_policy import (CompiledPolicy, GatewayDecision, RolePolicy, check_command, check_path, resolve_path, run_sql,
-                              visible)
-from ..gateway_policy import run_command as execute_command
-from ..models import KV, Admin, ChangeLog, Device, GatewayAgent, GatewayEvent
-from ..security import current_admin, hash_key, limiter
+from ..gateway_client import RunnerOps, RunnerUnavailable
+from ..gateway_client import call as runner_call
+from ..gateway_policy import CompiledPolicy, GatewayDecision, RolePolicy
+from ..models import KV, Admin, ChangeLog, GatewayAgent, GatewayEvent
+from ..security import (current_admin, device_for_token, hash_key, limiter, request_target, verify_device_signature)
 
 Auth = Depends(current_admin)
 router = APIRouter(prefix="/api/v1/admin/gateway")
@@ -35,12 +35,6 @@ TOKEN_PREFIX = "sag_"
 
 
 # ---------------------------------------------------------------- state
-def root() -> Path:
-    p = Path(settings.gateway_root_path)
-    p.mkdir(parents=True, exist_ok=True)
-    return p.resolve()
-
-
 def _kv(db: Session, key: str) -> dict:
     kv = db.get(KV, key)
     return dict(kv.value) if kv else {}
@@ -84,9 +78,10 @@ def agent_for_token(db: Session, raw: str) -> Caller | None:
         a = db.query(GatewayAgent).filter_by(token_hash=hash_key(raw)).first()
         return Caller(a.id, a.name, a.role, agent_id=a.id) if a and not a.revoked else None
     if raw.startswith("sdt_"):
-        # an enrolled Mac: the person's server role (set by the admin on the People page) applies to all their assistants
-        d = db.query(Device).filter_by(token_hash=hash_key(raw)).first()
-        if d is None or d.revoked or not (d.user.gateway_role or "").strip():
+        # an enrolled Mac: the person's server role (set by the admin on the People page) applies to all their assistants.
+        # Its requests are signed with the device key; TokenGate checks the signature before any tool runs.
+        d = device_for_token(db, raw)
+        if d is None or not (d.user.gateway_role or "").strip():
             return None
         return Caller(f"device:{d.id}", f"{d.user.email} · {d.hostname or 'Mac'}", d.user.gateway_role)
     return None
@@ -131,9 +126,11 @@ class Blocked(Exception):
     pass
 
 
-async def gate(ctx: Context, tool: str, arg: str, decide) -> tuple[Caller, RolePolicy, float]:
-    """Authenticate, rate-limit, decide (rules → supervisor). Raises Blocked with the reason the agent should see."""
+async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, dict]:
+    """Authenticate, rate-limit, decide (rules in the runner → supervisor). Raises Blocked with the reason the agent should
+    see. Returns the runner's check answer (query_db results come with it)."""
     t0 = time.perf_counter()
+    resp: dict = {}
     with SessionLocal() as db:
         agent = agent_for_token(db, (ctx.headers or {}).get("authorization", ""))
         if agent is None:
@@ -145,13 +142,34 @@ async def gate(ctx: Context, tool: str, arg: str, decide) -> tuple[Caller, RoleP
         if role is None:
             d = GatewayDecision("block", f"No approved policy for role '{agent.role}' yet", "hard-rule")
         else:
-            d = await asyncio.to_thread(decide, role)  # SQL and path checks must never block the event loop
+            try:
+                resp = await runner_call({"op": "check", "tool": tool, "arg": arg, "role": role.model_dump()})
+                dj = resp["decision"]
+                d = GatewayDecision(dj["verdict"], dj["reason"], dj["layer"])
+            except (RunnerUnavailable, KeyError) as e:
+                d = GatewayDecision("block", str(e) if isinstance(e, RunnerUnavailable) else "bad runner answer", "hard-rule")
             if d.verdict == "supervisor":
                 d = await supervise(db, agent, text, role, tool, arg, d)
     log(agent, tool, arg, d, t0)
     if d.verdict != "allow":
         raise Blocked(f"Blocked by Senti: {d.reason}")
-    return agent, role, t0
+    return agent, role, resp
+
+
+async def run_tool(ctx: Context, tool: str, arg: str, content: str = "") -> str:
+    try:
+        _, role, resp = await gate(ctx, tool, arg)
+    except Blocked as e:
+        return str(e)
+    if tool == "query_db":
+        return json.dumps({"columns": resp.get("columns", []), "rows": resp.get("rows", [])}, default=str)
+    try:
+        out = await runner_call({"op": "exec", "tool": tool, "arg": arg, "content": content, "role": role.model_dump()})
+    except RunnerUnavailable as e:
+        return f"Blocked by Senti: {e}"
+    if (out.get("decision") or {}).get("verdict") == "block":  # the files changed between check and run
+        return f"Blocked by Senti: {out['decision'].get('reason', '')}"
+    return str(out.get("output", ""))
 
 
 # ---------------------------------------------------------------- MCP server and tools
@@ -160,83 +178,29 @@ mcp = MCPServer(name="senti-server-gateway", instructions=(
     "the access policy for your role; a refused call explains why. Paths are relative to the shared folder."))
 
 
-def _err(e: Exception) -> str:
-    return str(e)
-
-
 @mcp.tool(description="List files in a folder of the shared server folder (entries your role can't access are hidden).")
 async def list_files(ctx: Context, path: str = ".") -> str:
-    try:
-        agent, role, _ = await gate(ctx, "list_files", path, lambda r: check_path(r, root(), path, "list"))
-    except Blocked as e:
-        return _err(e)
-    real, _ = resolve_path(root(), path)
-    if real is None or not real.is_dir():
-        return f"'{path}' is not a folder"
-    out = []
-    for p in sorted(real.iterdir()):
-        r = p.relative_to(root()).as_posix()
-        if p.is_symlink() or not visible(role, r):
-            continue
-        out.append(f"{r}{'/' if p.is_dir() else ''}\t{p.stat().st_size if p.is_file() else ''}")
-    return "\n".join(out) or "(empty)"
+    return await run_tool(ctx, "list_files", path)
 
 
 @mcp.tool(description="Read a text file from the shared server folder.")
 async def read_file(ctx: Context, path: str) -> str:
-    try:
-        await gate(ctx, "read_file", path, lambda r: check_path(r, root(), path, "read"))
-    except Blocked as e:
-        return _err(e)
-    real, _ = resolve_path(root(), path)
-    if real is None or not real.is_file():
-        return f"'{path}' is not a file"
-    data = real.read_bytes()[:200_000]
-    return data.decode("utf-8", errors="replace")
+    return await run_tool(ctx, "read_file", path)
 
 
 @mcp.tool(description="Write (create or replace) a text file in the shared server folder.")
 async def write_file(ctx: Context, path: str, content: str) -> str:
-    try:
-        await gate(ctx, "write_file", path, lambda r: check_path(r, root(), path, "write"))
-    except Blocked as e:
-        return _err(e)
-    real, rel = resolve_path(root(), path)
-    if real is None or real.is_dir():
-        return f"'{path}' can't be written"
-    real.parent.mkdir(parents=True, exist_ok=True)
-    real.write_text(content[:1_000_000])
-    return f"Wrote {len(content)} characters to {rel}"
+    return await run_tool(ctx, "write_file", path, content)
 
 
 @mcp.tool(description="Run one command (no shell, no pipes) in the shared server folder, e.g. 'grep -r invoice tickets'.")
 async def run_command(ctx: Context, command: str) -> str:
-    holder: dict[str, Any] = {}
-
-    def decide(r: RolePolicy):
-        d, argv = check_command(r, root(), command)
-        holder["argv"] = argv
-        return d
-    try:
-        await gate(ctx, "run_command", command, decide)
-    except Blocked as e:
-        return _err(e)
-    return await asyncio.to_thread(execute_command, root(), holder["argv"], settings.gateway_cmd_timeout_s)
+    return await run_tool(ctx, "run_command", command)
 
 
 @mcp.tool(description="Run one SQL statement on the server's SQLite database. Returns columns and up to 200 rows.")
 async def query_db(ctx: Context, sql: str) -> str:
-    holder: dict[str, Any] = {}
-
-    def decide(r: RolePolicy):
-        d, cols, rows = run_sql(r, settings.gateway_db_path, sql)  # SQLite's authorizer decides while it runs
-        holder.update(cols=cols, rows=rows)
-        return d if d.verdict != "allow" else GatewayDecision("allow", d.reason, "role-rule")
-    try:
-        await gate(ctx, "query_db", sql, decide)
-    except Blocked as e:
-        return _err(e)
-    return json.dumps({"columns": holder["cols"], "rows": holder["rows"]}, default=str)
+    return await run_tool(ctx, "query_db", sql)
 
 
 class TokenGate:
@@ -245,18 +209,47 @@ class TokenGate:
     def __init__(self, app):
         self.app = app
 
+    MAX_BODY = 4 * 1024 * 1024
+
+    async def _refuse(self, send, status: int, detail: str) -> None:
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer")]})
+        await send({"type": "http.response.body", "body": json.dumps({"detail": detail}).encode()})
+
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            auth = dict(scope.get("headers") or []).get(b"authorization", b"").decode("latin-1")
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+            auth = headers.get("authorization", "")
             with SessionLocal() as db:
                 ok = agent_for_token(db, auth) is not None
+                dev = device_for_token(db, auth) if ok and "sdt_" in auth else None
             if not ok:
-                body = (b'{"detail":"agent token required (Authorization: Bearer sag_...), or a Mac enrolled by a person '
-                        b'who has server access (People page)"}')
-                await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer")]})
-                await send({"type": "http.response.body", "body": body})
-                return
+                return await self._refuse(send, 401, "agent token required (Authorization: Bearer sag_...), or a Mac enrolled "
+                                                     "by a person who has server access (People page)")
+            if dev is not None:
+                # a Mac's request must be signed by its device key: read the body once, verify, then replay it
+                body, more = b"", True
+                while more:
+                    msg = await receive()
+                    if msg["type"] == "http.disconnect":
+                        return
+                    body += msg.get("body", b"")
+                    more = msg.get("more_body", False)
+                    if len(body) > self.MAX_BODY:
+                        return await self._refuse(send, 413, "request too large")
+                try:
+                    verify_device_signature(dev, scope["method"], request_target(scope), headers, body)
+                except HTTPException as e:
+                    return await self._refuse(send, 401, e.detail)
+                sent = False
+
+                async def replay():
+                    nonlocal sent
+                    if not sent:
+                        sent = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    return await receive()
+                return await self.app(scope, replay, send)
         await self.app(scope, receive, send)
 
 
@@ -279,9 +272,12 @@ def agent_json(a: GatewayAgent) -> dict:
 
 
 @router.get("/policy")
-def get_policy(admin: Admin = Auth, db: Session = Depends(get_db)):
-    return {"draft": _kv(db, "gateway_draft") or None, "active": _kv(db, "gateway_active") or None,
-            "inventory": policy_compiler.inventory(root(), settings.gateway_db_path)}
+async def get_policy(admin: Admin = Auth, db: Session = Depends(get_db)):
+    try:
+        inventory = await RunnerOps().inventory()
+    except RunnerUnavailable as e:
+        inventory = f"({e})"
+    return {"draft": _kv(db, "gateway_draft") or None, "active": _kv(db, "gateway_active") or None, "inventory": inventory}
 
 
 class PolicyIn(BaseModel):
@@ -293,7 +289,7 @@ async def compile_policy(body: PolicyIn, admin: Admin = Auth, db: Session = Depe
     if len(body.text.strip()) < 10:
         raise HTTPException(422, "describe who may do what, in a few sentences")
     try:
-        out = await policy_compiler.compile_policy(policy_model_config(db), body.text, root(), settings.gateway_db_path)
+        out = await policy_compiler.compile_policy(policy_model_config(db), body.text, RunnerOps())
     except Exception as e:
         raise HTTPException(502, f"could not compile the policy: {type(e).__name__}: {str(e)[:300]}")
     draft = {"text": body.text, **out, "compiled_at": time.time(), "compiled_by": admin.email}

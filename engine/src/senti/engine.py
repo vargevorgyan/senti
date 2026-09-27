@@ -107,7 +107,15 @@ class Engine:
                                 "last_error": self.remote.last_error if self.remote else ""},
             "stats": self.stats,
             "honeytokens": len(self.honey.files),
+            "assistants": self._assistants(),
+            "device_key": self.settings.device_key_type or "none",
         }
+
+    @staticmethod
+    def _assistants() -> dict:
+        from . import installers
+        detected, protected = installers.detected_agents(), installers.protected_agents()
+        return {"detected": detected, "protected": protected, "unprotected": [a for a in detected if a not in protected]}
 
     # ------------------------------------------------------------------ entry point
     async def handle(self, action: Action) -> dict[str, Any]:
