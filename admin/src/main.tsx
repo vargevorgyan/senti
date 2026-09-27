@@ -8,6 +8,10 @@ import '@fontsource/jetbrains-mono/500.css'
 import App from './App'
 import './styles.css'
 
+// Built for a sub-path (ADMIN_BASE=/admin/): send stray visits to it
+const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+if (base && window.location.pathname !== '/join' && !window.location.pathname.startsWith(base)) window.location.replace(`${base}/`)
+
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><BrowserRouter><App /></BrowserRouter></StrictMode>,
+  <StrictMode><BrowserRouter basename={base || undefined}><App /></BrowserRouter></StrictMode>,
 )

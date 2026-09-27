@@ -74,6 +74,9 @@ services:
       context: ./admin
       additional_contexts:
         engine: ./engine   # the Mac engine + installer, served at /downloads/ and /install.sh
+      args:
+        # "/admin/" serves the panel under a sub-path (behind a reverse proxy); the API stays at /api/
+        ADMIN_BASE: ${SENTI_ADMIN_BASE:-/}
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
@@ -84,6 +87,9 @@ services:
     environment:
       # names/IPs the server certificate is valid for (Macs pin Senti's CA, so it can be renewed any time)
       SENTI_TLS_HOSTS: ${SENTI_TLS_HOSTS:-localhost,127.0.0.1}
+      # the public HTTPS port (plain HTTP redirects there) and a reverse proxy in front whose X-Forwarded-For is trusted
+      SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
+      SENTI_TRUSTED_PROXY: ${SENTI_TRUSTED_PROXY:-}
     volumes:
       - tls:/tls
       - tls-public:/tls-public

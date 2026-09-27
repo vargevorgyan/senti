@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ago, api } from '../api'
+import { Link } from 'react-router-dom'
 import { Icon, VerdictPill, useLiveEvent, useLoad, useToast } from '../components/ui'
 
 interface RoleRules {
@@ -118,7 +119,7 @@ export default function Gateway() {
 
       <section className="panel">
         <h2>Who can connect</h2>
-        <p className="small"><b>People’s AI assistants</b> (Claude Code, Claude Desktop, Cursor, Codex, OpenCode) connect through their Mac: pick their server role on <a href="/people">People and roles</a>, and their assistants get these tools after <code>senti connect</code> (part of setting up their Mac). No tokens or certificates to handle.</p>
+        <p className="small"><b>People’s AI assistants</b> (Claude Code, Claude Desktop, Cursor, Codex, OpenCode) connect through their Mac: pick their server role on <Link to="/people">People and roles</Link>, and their assistants get these tools after <code>senti connect</code> (part of setting up their Mac). No tokens or certificates to handle.</p>
         <p className="small"><b>Bots and services</b> without a person get their own token below; the token decides the role and is shown once.</p>
         <div className="table-wrap" style={{ border: 'none' }}>
           <table>

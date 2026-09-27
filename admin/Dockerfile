@@ -3,7 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run build
+ARG ADMIN_BASE=/
+RUN ADMIN_BASE=$ADMIN_BASE npm run build
 
 # The Mac installer and the Senti engine, served by this server so every Mac gets the version that matches it
 # (engine = the ../engine folder, passed as an extra build context in docker-compose.yml)
@@ -22,7 +23,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx/security-headers.conf /etc/nginx/snippets/senti-security-headers.conf
 COPY nginx/proxy.conf /etc/nginx/snippets/senti-proxy.conf
 COPY tls-cert.sh /docker-entrypoint.d/10-senti-tls-cert.sh
-RUN chmod +x /docker-entrypoint.d/10-senti-tls-cert.sh
+COPY senti-nginx-env.sh /docker-entrypoint.d/20-senti-nginx-env.sh
+RUN chmod +x /docker-entrypoint.d/10-senti-tls-cert.sh /docker-entrypoint.d/20-senti-nginx-env.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY --from=engine-bundle /senti-engine.tar.gz /senti-engine.tar.gz.sha256 /usr/share/nginx/html/downloads/
 COPY --from=engine-bundle /install.sh /usr/share/nginx/html/install.sh

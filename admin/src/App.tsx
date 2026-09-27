@@ -69,7 +69,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="shell">
       <aside className="rail">
-        <NavLink to="/" className="brand" aria-label="Senti overview"><img src="/senti-app-icon.svg" alt="" /><b>Senti</b></NavLink>
+        <NavLink to="/" className="brand" aria-label="Senti overview"><img src={`${import.meta.env.BASE_URL}senti-app-icon.svg`} alt="" /><b>Senti</b></NavLink>
         <nav className="nav" aria-label="Main">
           {nav.map(n => (
             <NavLink key={n.to} to={n.to} end={n.end}><Icon name={n.icon} />{n.label}{n.count ? <span className="count">{n.count}</span> : null}</NavLink>

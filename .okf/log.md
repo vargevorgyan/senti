@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-09-27
+* **Update**: `./senti-server` ports and reverse proxy — `--http-port`, `--admin-base /admin/`, `--trusted-proxy`; backend port check dropped (not published); admin redirect port and real-IP trust written at container start; admin fonts no longer inlined as `data:` (CSP `font-src 'self'`). Deployed to `senti.gagik.one` (landing at `/`, admin at `/admin/`) — [Server installer](/guides/server-installer.md).
 * **Creation**: Public landing page in `landing/` (night-watch palette, live checkpoint hero with real incident commands, incident stack, six-check walkthrough, features, plain-English policy, animated MCP server gateway with live call log) — [Code guide](/code-guide.md).
 * **Update**: Documentation catch-up — new guides ([server installer](/guides/server-installer.md), [connecting assistants](/guides/connecting-assistants.md), [writing a server policy](/guides/writing-server-policy.md)), [Access and credentials](/architecture/access-and-credentials.md), [server-gateway use case](/use-cases/agents-on-the-company-server.md); getting started, system overview, admin panel, glossary, demo plan, AGENTS.md and README now describe the company AI filter, the MCP gateway, invites and the installer.
 * **Decision**: [ADR-012](/decisions/adr-012-company-cloud-ai-filter.md) — one company AI filter in the cloud; employees' Macs run no model (thin agent ~100 MB), scripts sent with secrets redacted, pre-checks via the company AI; measured in [Company AI filter](/research/company-ai-filter.md); typosquat check fixed (0/226 false alarms).

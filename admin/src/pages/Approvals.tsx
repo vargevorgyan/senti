@@ -29,7 +29,7 @@ export default function Approvals() {
           {pending.map(a => (
             <div className="pop" role="alertdialog" aria-labelledby={`ap-${a.id}`} key={a.id}>
               <div className="hd">
-                <img src="/senti-app-icon.svg" alt="Senti" />
+                <img src={`${import.meta.env.BASE_URL}senti-app-icon.svg`} alt="Senti" />
                 <div><div className="who">Senti · {agentName(a.agent)} on {a.hostname || 'a Mac'} ({a.user}) · {ago(a.created_at)}</div>
                   <h2 id={`ap-${a.id}`}>Should I let this through?</h2></div>
               </div>

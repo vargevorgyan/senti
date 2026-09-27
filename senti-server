@@ -101,14 +101,18 @@ Usage: ./senti-server install [options]      (without options it asks, with sens
   --host NAME[,NAME…]      extra host names / IPs for the certificate (detected automatically)
   --ai local|api|none      private model on this server / a model API you already use / none for now
   --ai-url URL --ai-model NAME --ai-key KEY      for --ai api (any OpenAI-compatible endpoint)
-  --https-port N           default 8443
+  --https-port N           HTTPS port for the admin panel, Macs and the MCP gateway (default 8443)
+  --http-port N            plain-HTTP port that only redirects to HTTPS (default 8081)
+  --admin-base PATH        serve the admin panel under a sub-path, e.g. /admin/ (default /)
+  --trusted-proxy CIDRS    a reverse proxy on this server in front of Senti (e.g. 172.16.0.0/12 for the host's nginx):
+                           Senti then takes the client address from its X-Forwarded-For header
   --demo-data              add a fake "company server" (files + database) to try the server gateway
 EOF
 }
 
 cmd_install() {
   local ORG="" ADMIN_EMAIL="" ADMIN_PASSWORD="" NETWORK="" HOSTS="" AI="" AI_URL="" AI_MODEL="" AI_KEY="" HTTPS_PORT="" DEMO=""
-  local PUBLIC_HOST="" ADMIN_ALLOW=""
+  local PUBLIC_HOST="" ADMIN_ALLOW="" HTTP_PORT="" ADMIN_BASE="" TRUSTED_PROXY=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes|-y) YES=1 ;;
@@ -124,6 +128,9 @@ cmd_install() {
       --ai-model) AI_MODEL=$2; shift ;;
       --ai-key) AI_KEY=$2; shift ;;
       --https-port) HTTPS_PORT=$2; shift ;;
+      --http-port) HTTP_PORT=$2; shift ;;
+      --admin-base) ADMIN_BASE=$2; shift ;;
+      --trusted-proxy) TRUSTED_PROXY=$2; shift ;;
       --demo-data) DEMO=yes ;;
       -h|--help) usage_install; exit 0 ;;
       *) die "Unknown option $1 (see ./senti-server install --help)" ;;
@@ -235,11 +242,22 @@ cmd_install() {
     confirm "Add a demo 'company server' (fake tickets, customers, payments) for agents to use" && DEMO=yes || DEMO=no
   fi
 
-  HTTPS_PORT=${HTTPS_PORT:-8443}
-  local admin_port backend_port; admin_port=8081; backend_port=8000
-  for p in "$HTTPS_PORT" "$admin_port" "$backend_port"; do
+  # a re-install keeps the ports, sub-path and proxy it had unless new ones are given
+  HTTPS_PORT=${HTTPS_PORT:-$(env_get SENTI_HTTPS_PORT)}; HTTPS_PORT=${HTTPS_PORT:-8443}
+  HTTP_PORT=${HTTP_PORT:-$(env_get SENTI_ADMIN_PORT)}; HTTP_PORT=${HTTP_PORT:-8081}
+  ADMIN_BASE=${ADMIN_BASE:-$(env_get SENTI_ADMIN_BASE)}; ADMIN_BASE=${ADMIN_BASE:-/}
+  TRUSTED_PROXY=${TRUSTED_PROXY:-$(env_get SENTI_TRUSTED_PROXY)}
+  for p in "$HTTPS_PORT" "$HTTP_PORT"; do
+    case "$p" in ''|*[!0-9]*) die "Ports must be numbers (got '$p')" ;; esac
+    [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "Port $p is out of range"
+  done
+  [ "$HTTPS_PORT" != "$HTTP_PORT" ] || die "--https-port and --http-port must differ"
+  case "$ADMIN_BASE" in /) ;; /*/) printf '%s' "$ADMIN_BASE" | grep -Eq '^(/[A-Za-z0-9._-]+)+/$' || die "--admin-base must look like /admin/" ;;
+    *) die "--admin-base must start and end with / (like /admin/)" ;; esac
+  [ -z "$TRUSTED_PROXY" ] || printf '%s' "$TRUSTED_PROXY" | grep -Eq '^[0-9A-Fa-f:.,/]+$' || die "--trusted-proxy must be IPs or CIDRs"
+  for p in "$HTTPS_PORT" "$HTTP_PORT"; do
     if port_busy "$p" && ! compose ps --status running 2>/dev/null | grep "$PROJECT" >/dev/null; then
-      die "Port $p is already in use by another program. Free it, or pass --https-port with another number"
+      die "Port $p is already in use by another program. Free it, or choose another with --https-port / --http-port"
     fi
   done
 
@@ -256,8 +274,10 @@ SENTI_SECRET_KEY=$secret
 SENTI_BIND=$([ "$NETWORK" = lan ] && echo 0.0.0.0 || echo 127.0.0.1)
 SENTI_TLS_HOSTS=$tls_hosts
 SENTI_HTTPS_PORT=$HTTPS_PORT
-SENTI_ADMIN_PORT=$admin_port
-SENTI_BACKEND_PORT=$backend_port
+SENTI_ADMIN_PORT=$HTTP_PORT
+# Admin panel sub-path (behind a reverse proxy) and the proxy Senti trusts for client addresses
+SENTI_ADMIN_BASE=$ADMIN_BASE
+SENTI_TRUSTED_PROXY=$TRUSTED_PROXY
 SENTI_CORP_MODEL_URL=$AI_URL
 SENTI_CORP_MODEL=$AI_MODEL
 SENTI_CORP_MODEL_API_KEY=$AI_KEY
@@ -294,12 +314,12 @@ EOF
   sed -i.tmp 's/^SENTI_ADMIN_PASSWORD=.*/SENTI_ADMIN_PASSWORD=/' "$ENV_FILE" && rm -f "$ENV_FILE.tmp"
 
   local fp; fp=$(compose logs admin 2>/dev/null | sed -n 's/.*[Ff]ingerprint=\([0-9A-F:]*\).*/\1/p' | tail -1)
-  local where; where=$([ "$NETWORK" = lan ] && echo "${ip:-$host}" || echo localhost)
+  local where; where=$([ "$NETWORK" = lan ] && echo "$PUBLIC_HOST" || echo localhost)
   cat <<EOF
 
 ${C_G}${C_B}Senti is ready.${C_0}
 
-  Admin panel   https://$where:$HTTPS_PORT
+  Admin panel   https://$where:$HTTPS_PORT$ADMIN_BASE
   Sign in       $( [ "$existing" = 1 ] && echo "your existing admin account (forgot it? ./senti-server reset-password)" || echo "$ADMIN_EMAIL")
   Password      $( if [ "$existing" = 1 ]; then echo "unchanged"; elif [ "$generated" = 1 ]; then echo "$ADMIN_PASSWORD   ${C_Y}← save it now, it is shown only once${C_0}"; else echo "(the one you typed)"; fi)
 

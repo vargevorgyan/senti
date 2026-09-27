@@ -31,6 +31,29 @@ writes `.env` (mode 600, old one backed up as `.env.bak.*`) with a generated `SE
 **removes the admin password from `.env`** afterwards; prints the admin URL, the one-time password, the certificate
 fingerprint and next steps. Re-running on an existing install keeps data (people, Macs, audit).
 
+## Ports, sub-path and a reverse proxy in front
+
+| Option | `.env` | Default | What |
+|---|---|---|---|
+| `--https-port N` | `SENTI_HTTPS_PORT` | 8443 | admin panel, device API, MCP gateway, `/join`, `/install.sh` |
+| `--http-port N` | `SENTI_ADMIN_PORT` | 8081 | plain HTTP, only redirects to the HTTPS port |
+| `--admin-base PATH` | `SENTI_ADMIN_BASE` | `/` | admin panel under a sub-path such as `/admin/`; `/api/`, `/join`, `/install.sh`, `/downloads/` stay at the root |
+| `--trusted-proxy CIDRS` | `SENTI_TRUSTED_PROXY` | empty | a reverse proxy on the same server (e.g. `172.16.0.0/12` for the host's nginx reaching Docker); its `X-Forwarded-For` becomes the client address, so `SENTI_ADMIN_ALLOW` and rate limits see real callers |
+
+The backend port is no longer published (only the admin container reaches it), so it can't clash with other services.
+A re-install keeps the previous ports, sub-path and proxy unless new ones are given. The admin container writes the
+redirect port and `set_real_ip_from` lines at start (`admin/senti-nginx-env.sh`).
+
+Behind a site's nginx on 443 (as on the demo server `senti.gagik.one`): proxy `/admin/`, `/api/`, `/join`, `/install.sh`
+and `/downloads/` to `https://127.0.0.1:8443` with `proxy_ssl_verify off` and `proxy_set_header X-Forwarded-For $remote_addr`
+(overwrite, never append), and install with `--admin-base /admin/ --trusted-proxy 172.16.0.0/12`. Macs still connect to
+`https://<host>:8443` directly, because they pin Senti's own CA, not the site's Let's Encrypt certificate.
+
+```bash
+./senti-server install --yes --org Senti --network lan --public-host senti.gagik.one --admin-allow any --ai none \
+  --demo-data --https-port 8443 --http-port 8081 --admin-base /admin/ --trusted-proxy 172.16.0.0/12
+```
+
 # Manage
 
 | Command | Does |
