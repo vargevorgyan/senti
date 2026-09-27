@@ -281,6 +281,7 @@ class UserIn(BaseModel):
     name: str = ""
     role_id: str = "engineering"
     agent_profiles: dict[str, str] = {}
+    gateway_role: str = ""  # server gateway role for this person's AI assistants ("" = no server access)
 
 
 def user_json(u: User, db: Session) -> dict:
@@ -288,7 +289,7 @@ def user_json(u: User, db: Session) -> dict:
     last = db.query(Invite).filter_by(user_id=u.id).order_by(Invite.created_at.desc()).first()
     return {"id": u.id, "email": u.email, "name": u.name, "role_id": u.role_id, "agent_profiles": u.agent_profiles or {},
             "devices": len(devs), "online": any(time.time() - d.last_seen < ONLINE_S for d in devs), "created_at": u.created_at,
-            "invite": invite_json(last) if last else None}
+            "invite": invite_json(last) if last else None, "gateway_role": u.gateway_role or ""}
 
 
 @router.get("/users")
@@ -303,7 +304,8 @@ def create_user(body: UserIn, admin: Admin = Auth, db: Session = Depends(get_db)
         raise HTTPException(409, "user exists")
     if not db.get(Role, body.role_id):
         raise HTTPException(422, "unknown role")
-    u = User(email=email, name=body.name or email.split("@")[0], role_id=body.role_id, agent_profiles=body.agent_profiles)
+    u = User(email=email, name=body.name or email.split("@")[0], role_id=body.role_id, agent_profiles=body.agent_profiles,
+             gateway_role=body.gateway_role.strip().lower())
     db.add(u)
     db.commit()
     bump(db, admin.email, "user.create", email)
@@ -322,8 +324,10 @@ def update_user(uid: int, body: UserIn, admin: Admin = Auth, db: Session = Depen
             raise HTTPException(422, f"unknown profile {pid}")
     u.name, u.role_id = body.name, body.role_id
     u.agent_profiles = {k: v for k, v in body.agent_profiles.items() if v}
+    u.gateway_role = body.gateway_role.strip().lower()
     db.commit()
-    bump(db, admin.email, "user.update", u.email, {"role": u.role_id, "agent_profiles": u.agent_profiles})
+    bump(db, admin.email, "user.update", u.email, {"role": u.role_id, "agent_profiles": u.agent_profiles,
+                                                    "gateway_role": u.gateway_role})
     return user_json(u, db)
 
 
@@ -376,7 +380,8 @@ def create_invite(uid: int, body: InviteIn, admin: Admin = Auth, db: Session = D
     db.commit()
     fp = _tls_fingerprint()
     backend = body.backend.strip() or "<backend-url>"
-    command = f"senti enroll --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"
+    # one step on the Mac: join, start, protect the assistants, connect the company server, start at login
+    command = f"senti setup --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"
     # the key is returned exactly once; only its hash is stored
     return {**invite_json(inv), "key": key, "command": command}
 

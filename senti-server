@@ -1,0 +1,378 @@
+#!/usr/bin/env bash
+# Senti server installer and manager — sets up the organization side (backend, admin panel, optional private AI model).
+#
+#   ./senti-server                 guided install (asks a few questions, sensible defaults: just press Enter)
+#   ./senti-server install --yes --org "Acme" --ai none      non-interactive install (see --help)
+#   ./senti-server status | info | logs | stop | start | update | backup | restore FILE | reset-password | uninstall
+#
+# Works on Linux servers and Macs with Docker. Nothing is sent anywhere; secrets are generated locally.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PROJECT=senti
+ENV_FILE=.env
+C_B="" C_G="" C_Y="" C_R="" C_0=""
+if [ -t 1 ]; then C_B=$'\033[1m' C_G=$'\033[32m' C_Y=$'\033[33m' C_R=$'\033[31m' C_0=$'\033[0m'; fi
+say()  { printf '%s\n' "$*"; }
+step() { printf '\n%s▸ %s%s\n' "$C_B" "$*" "$C_0"; }
+ok()   { printf '  %s✓%s %s\n' "$C_G" "$C_0" "$*"; }
+warn() { printf '  %s!%s %s\n' "$C_Y" "$C_0" "$*"; }
+die()  { printf '\n%s✗ %s%s\n' "$C_R" "$*" "$C_0" >&2; exit 1; }
+
+YES=0
+ask() {  # ask VAR "Question" "default"
+  local __var=$1 __q=$2 __def=${3:-} __ans=""
+  if [ "$YES" = 1 ] || [ ! -t 0 ]; then printf -v "$__var" '%s' "${!__var:-$__def}"; return; fi
+  if [ -n "${!__var:-}" ]; then return; fi   # already given as a flag
+  read -r -p "  $__q${__def:+ [$__def]}: " __ans || true
+  printf -v "$__var" '%s' "${__ans:-$__def}"
+}
+confirm() {  # confirm "Question" (default yes)
+  [ "$YES" = 1 ] && return 0
+  [ -t 0 ] || return 0
+  local a; read -r -p "  $1 [Y/n]: " a || true
+  case "$a" in n|N|no|No) return 1 ;; *) return 0 ;; esac
+}
+rand() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "${1:-24}" || true; }  # tr ends on SIGPIPE
+env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 || true; }
+compose() { docker compose -p "$PROJECT" "$@"; }
+
+https_url() { printf 'https://%s:%s' "${1:-localhost}" "$(env_get SENTI_HTTPS_PORT | sed 's/^$/8443/')"; }
+
+# ------------------------------------------------------------------ preflight
+need_docker() {
+  step "Checking Docker"
+  if ! command -v docker >/dev/null 2>&1; then
+    case "$(uname -s)" in
+      Linux)
+        warn "Docker is not installed."
+        if confirm "Install Docker now with Docker's official script (get.docker.com)? Needs sudo"; then
+          curl -fsSL https://get.docker.com | sudo sh || die "Docker installation failed"
+          sudo usermod -aG docker "$USER" 2>/dev/null || true
+          ok "Docker installed (log out and back in once so you can use it without sudo)"
+        else die "Install Docker (https://docs.docker.com/engine/install/) and run this again"; fi ;;
+      Darwin)
+        die "Install Docker Desktop (https://www.docker.com/products/docker-desktop/) or OrbStack, start it, and run this again" ;;
+      *) die "Unsupported system $(uname -s): run Senti on Linux or macOS with Docker" ;;
+    esac
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    if [ "$(uname -s)" = Darwin ] && [ -d /Applications/Docker.app ]; then
+      say "  Starting Docker Desktop…"; open -a Docker
+      for _ in $(seq 60); do docker info >/dev/null 2>&1 && break; sleep 3; done
+    fi
+    docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start it and run this again"
+  fi
+  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is missing (docker compose). Update Docker"
+  ok "Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null) is running"
+}
+
+mem_gb() {
+  case "$(uname -s)" in
+    Darwin) echo $(( $(sysctl -n hw.memsize) / 1073741824 )) ;;
+    *) awk '/MemTotal/ {printf "%d", $2/1048576}' /proc/meminfo ;;
+  esac
+}
+disk_gb() { df -Pk . | awk 'NR==2 {printf "%d", $4/1048576}'; }
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; } || return 1; }
+primary_ip() {
+  case "$(uname -s)" in
+    Darwin) ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true ;;
+    *) hostname -I 2>/dev/null | awk '{print $1}' || true ;;
+  esac
+}
+
+# ------------------------------------------------------------------ install
+usage_install() {
+  cat <<'EOF'
+Usage: ./senti-server install [options]      (without options it asks, with sensible defaults)
+  --yes                    accept defaults, ask nothing
+  --org NAME               company name
+  --admin-email EMAIL      admin login (default admin@<company>.local)
+  --admin-password PASS    admin password (default: a random one, shown once)
+  --network local|lan      local = only this computer (testing); lan = reachable by the team (default)
+  --host NAME[,NAME…]      extra host names / IPs for the certificate (detected automatically)
+  --ai local|api|none      private model on this server / a model API you already use / none for now
+  --ai-url URL --ai-model NAME --ai-key KEY      for --ai api (any OpenAI-compatible endpoint)
+  --https-port N           default 8443
+  --demo-data              add a fake "company server" (files + database) to try the server gateway
+EOF
+}
+
+cmd_install() {
+  local ORG="" ADMIN_EMAIL="" ADMIN_PASSWORD="" NETWORK="" HOSTS="" AI="" AI_URL="" AI_MODEL="" AI_KEY="" HTTPS_PORT="" DEMO=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes|-y) YES=1 ;;
+      --org) ORG=$2; shift ;;
+      --admin-email) ADMIN_EMAIL=$2; shift ;;
+      --admin-password) ADMIN_PASSWORD=$2; shift ;;
+      --network) NETWORK=$2; shift ;;
+      --host) HOSTS=$2; shift ;;
+      --ai) AI=$2; shift ;;
+      --ai-url) AI_URL=$2; shift ;;
+      --ai-model) AI_MODEL=$2; shift ;;
+      --ai-key) AI_KEY=$2; shift ;;
+      --https-port) HTTPS_PORT=$2; shift ;;
+      --demo-data) DEMO=yes ;;
+      -h|--help) usage_install; exit 0 ;;
+      *) die "Unknown option $1 (see ./senti-server install --help)" ;;
+    esac
+    shift
+  done
+
+  say "${C_B}Senti server setup${C_0} — about 5 minutes. Press Enter to accept a suggestion."
+  [ -f docker-compose.yml ] || die "Run this from the Senti folder (docker-compose.yml not found)"
+  need_docker
+
+  if docker volume inspect "${PROJECT}_backend-data" >/dev/null 2>&1; then
+    warn "Senti is already installed on this machine (its data is kept)."
+    confirm "Re-apply settings and restart it? Your data, people and Macs stay as they are" || exit 0
+  fi
+  if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"; chmod 600 "$ENV_FILE".bak.*; fi
+
+  step "About your company"
+  ask ORG "Company name" "My Company"
+  local slug; slug=$(printf '%s' "$ORG" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')
+  ask ADMIN_EMAIL "Admin login email" "admin@${slug:-company}.local"
+  ADMIN_EMAIL=$(printf '%s' "$ADMIN_EMAIL" | tr '[:upper:]' '[:lower:]')
+  case "$ADMIN_EMAIL" in *@*) ;; *) die "The admin login must be an email address" ;; esac
+  local generated=0
+  if [ -z "$ADMIN_PASSWORD" ] && [ "$YES" = 0 ] && [ -t 0 ]; then
+    read -r -s -p "  Admin password (Enter = create a strong one for you): " ADMIN_PASSWORD || true; echo
+  fi
+  if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD=$(rand 20); generated=1; fi
+  [ ${#ADMIN_PASSWORD} -ge 10 ] || die "Please use at least 10 characters for the admin password"
+
+  step "Who should reach Senti?"
+  if [ -z "$NETWORK" ] && [ "$YES" = 0 ] && [ -t 0 ]; then
+    say "  1) Other computers in the company network (recommended: employees' Macs and agents connect)"
+    say "  2) Only this computer (for trying it out)"
+    local n; read -r -p "  Choose [1]: " n || true; [ "${n:-1}" = 2 ] && NETWORK=local || NETWORK=lan
+  fi
+  NETWORK=${NETWORK:-lan}
+  local host ip; host=$(hostname 2>/dev/null || echo localhost); ip=$(primary_ip)
+  local tls_hosts="localhost,127.0.0.1"
+  if [ "$NETWORK" = lan ]; then
+    tls_hosts="$tls_hosts,$host${ip:+,$ip}${HOSTS:+,$HOSTS}"
+    ok "Reachable at https://${ip:-$host}:${HTTPS_PORT:-8443} (certificate for: $tls_hosts)"
+  else
+    ok "Only this computer: https://localhost:${HTTPS_PORT:-8443}"
+  fi
+
+  step "AI that checks unclear actions"
+  local ram disk; ram=$(mem_gb); disk=$(disk_gb)
+  if [ -z "$AI" ] && [ "$YES" = 0 ] && [ -t 0 ]; then
+    say "  1) Private model on this server — nothing leaves the company (downloads ~2 GB, needs ~6 GB free memory)"
+    say "  2) A model API you already use (OpenAI, Azure OpenAI, OpenRouter, vLLM, LM Studio…)"
+    say "  3) None for now — unclear actions are asked about or blocked (you can add a model later in the admin panel)"
+    local a; read -r -p "  Choose [1]: " a || true
+    case "${a:-1}" in 2) AI=api ;; 3) AI=none ;; *) AI=local ;; esac
+  fi
+  AI=${AI:-local}
+  case "$AI" in
+    local)
+      [ "$ram" -ge 8 ] || warn "This machine has ${ram} GB of memory; the private model wants 8 GB or more. Consider option 2."
+      [ "$disk" -ge 10 ] || warn "Only ${disk} GB of disk free; the model and images need ~6 GB."
+      AI_URL=http://ollama:11434/v1; AI_MODEL=${AI_MODEL:-qwen2.5:3b}; AI_KEY="" ;;
+    api)
+      ask AI_URL "API address (OpenAI-compatible)" "https://api.openai.com/v1"
+      ask AI_MODEL "Model name" "gpt-4o-mini"
+      if [ -z "$AI_KEY" ] && [ "$YES" = 0 ] && [ -t 0 ]; then read -r -s -p "  API key (hidden): " AI_KEY || true; echo; fi ;;
+    none) AI_URL=http://ollama:11434/v1; AI_MODEL=qwen2.5:3b; AI_KEY="" ;;
+    *) die "--ai must be local, api or none" ;;
+  esac
+
+  if [ -z "$DEMO" ] && [ "$YES" = 0 ] && [ -t 0 ]; then
+    step "Try the server gateway with fake data?"
+    confirm "Add a demo 'company server' (fake tickets, customers, payments) for agents to use" && DEMO=yes || DEMO=no
+  fi
+
+  HTTPS_PORT=${HTTPS_PORT:-8443}
+  local admin_port backend_port; admin_port=8081; backend_port=8000
+  for p in "$HTTPS_PORT" "$admin_port" "$backend_port"; do
+    if port_busy "$p" && ! compose ps --status running 2>/dev/null | grep -q "$PROJECT"; then
+      die "Port $p is already in use by another program. Free it, or pass --https-port with another number"
+    fi
+  done
+
+  step "Writing settings"
+  local secret; secret=$(env_get SENTI_SECRET_KEY); [ -n "$secret" ] || secret=$(rand 48)
+  umask 077
+  cat >"$ENV_FILE" <<EOF
+# Written by ./senti-server on $(date). Change with ./senti-server install (or edit and run ./senti-server start).
+SENTI_ORG_NAME=$ORG
+SENTI_ADMIN_EMAIL=$ADMIN_EMAIL
+# Used only when Senti starts for the first time; removed after setup. Reset later with ./senti-server reset-password
+SENTI_ADMIN_PASSWORD=$ADMIN_PASSWORD
+SENTI_SECRET_KEY=$secret
+SENTI_BIND=$([ "$NETWORK" = lan ] && echo 0.0.0.0 || echo 127.0.0.1)
+SENTI_TLS_HOSTS=$tls_hosts
+SENTI_HTTPS_PORT=$HTTPS_PORT
+SENTI_ADMIN_PORT=$admin_port
+SENTI_BACKEND_PORT=$backend_port
+SENTI_CORP_MODEL_URL=$AI_URL
+SENTI_CORP_MODEL=$AI_MODEL
+SENTI_CORP_MODEL_API_KEY=$AI_KEY
+SENTI_GATEWAY_DIR=./server-data
+SENTI_AI_MODE=$AI
+EOF
+  umask 022
+  mkdir -p server-data
+  ok "Settings saved to $ENV_FILE (readable only by you)"
+
+  step "Building and starting Senti (first time: a few minutes)"
+  compose build --quiet 2>&1 | tail -5 || die "Build failed; see the messages above"
+  if [ "$AI" = local ]; then compose up -d; else compose up -d backend admin; fi
+  say "  Waiting for Senti to answer…"
+  local url; url="https://localhost:$HTTPS_PORT"
+  for _ in $(seq 90); do curl -skf "$url/api/v1/health" >/dev/null 2>&1 && break; sleep 2; done
+  curl -skf "$url/api/v1/health" >/dev/null 2>&1 || die "Senti didn't start. Run ./senti-server logs to see why"
+  ok "Senti is running"
+
+  local token
+  token=$(curl -sk "$url/api/v1/auth/login" -H 'content-type: application/json' \
+          -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+  if [ -z "$token" ]; then
+    warn "Could not sign in with the new password: this Senti already had an admin. Use your existing login,"
+    warn "or run ./senti-server reset-password"
+  elif [ "$AI" = none ]; then
+    curl -sk -X PUT "$url/api/v1/admin/settings/corporate-model" -H "Authorization: Bearer $token" \
+         -H 'content-type: application/json' -d "{\"url\":\"$AI_URL\",\"model\":\"$AI_MODEL\",\"enabled\":false}" >/dev/null || true
+    ok "No AI model for now: unclear actions will be asked about or blocked"
+  fi
+
+  if [ "$DEMO" = yes ]; then
+    compose exec -T backend python - /srv < demo/make-server-data.py >/dev/null && ok "Demo company data added (fake)"
+  fi
+
+  # the password must not stay on disk; the admin account now exists in Senti's database
+  sed -i.tmp 's/^SENTI_ADMIN_PASSWORD=.*/SENTI_ADMIN_PASSWORD=/' "$ENV_FILE" && rm -f "$ENV_FILE.tmp"
+
+  local fp; fp=$(compose logs admin 2>/dev/null | sed -n 's/.*[Ff]ingerprint=\([0-9A-F:]*\).*/\1/p' | tail -1)
+  local where; where=$([ "$NETWORK" = lan ] && echo "${ip:-$host}" || echo localhost)
+  cat <<EOF
+
+${C_G}${C_B}Senti is ready.${C_0}
+
+  Admin panel   https://$where:$HTTPS_PORT
+  Sign in       $ADMIN_EMAIL
+  Password      $( [ "$generated" = 1 ] && echo "$ADMIN_PASSWORD   ${C_Y}← save it now, it is shown only once${C_0}" || echo "(the one you typed)")
+
+  Your browser will warn about the certificate the first time: Senti made its own, and that's expected.
+  ${fp:+Certificate fingerprint (to compare): $fp}
+
+Next steps (all in the admin panel):
+  1. People and roles → "Add person and invite" → send them their one-time command.
+  2. Server gateway → describe in plain English what AI agents may do on this server → Generate rules → Approve.
+  3. Server gateway → Add agent → copy the connect command into Claude Code or your bot.
+
+Manage Senti:  ./senti-server status | logs | backup | update | reset-password | uninstall
+EOF
+}
+
+# ------------------------------------------------------------------ manage
+cmd_status() {
+  need_docker >/dev/null
+  compose ps
+  local url; url=$(https_url localhost)
+  if curl -skf "$url/api/v1/health" >/dev/null 2>&1; then ok "Senti answers at $url"; else warn "Senti is not answering at $url"; fi
+}
+
+cmd_info() {
+  if [ "$(env_get SENTI_BIND)" = 0.0.0.0 ]; then say "Admin panel:  $(https_url "$(primary_ip)")  (on this computer: $(https_url localhost))"
+  else say "Admin panel:  $(https_url localhost)  (only this computer; reinstall and choose the network option to share it)"; fi
+  say "Admin login:  $(env_get SENTI_ADMIN_EMAIL)"
+  say "AI:           $(env_get SENTI_AI_MODE) ($(env_get SENTI_CORP_MODEL))"
+  compose logs admin 2>/dev/null | sed -n 's/.*\([Ff]ingerprint=[0-9A-F:]*\).*/Certificate:  \1/p' | tail -1
+}
+
+cmd_backup() {
+  need_docker >/dev/null
+  local file=${1:-senti-backup-$(date +%Y%m%d-%H%M%S).tar.gz}
+  step "Backing up to $file"
+  compose stop backend >/dev/null
+  docker run --rm -v "${PROJECT}_backend-data:/data/backend" -v "${PROJECT}_tls:/data/tls" -v "$PWD:/out" alpine \
+    sh -c "cp -a /out/.env /data/env 2>/dev/null; tar czf /out/$(basename "$file") -C /data backend tls env; rm -f /data/env" \
+    || { compose start backend >/dev/null; die "Backup failed"; }
+  if [ -d server-data ]; then (umask 077; tar czf "${file%.tar.gz}-server-data.tar.gz" server-data); fi
+  compose start backend >/dev/null
+  chmod 600 "$(basename "$file")"
+  ok "Saved $(basename "$file") (people, profiles, devices, audit log, certificate; keep it private)"
+  [ -d server-data ] && ok "Saved ${file%.tar.gz}-server-data.tar.gz (files shared with agents)"
+}
+
+cmd_restore() {
+  local file=${1:-}; [ -f "$file" ] || die "Usage: ./senti-server restore senti-backup-….tar.gz"
+  need_docker >/dev/null
+  confirm "Replace the current Senti data with $file? This can't be undone" || exit 0
+  compose stop backend admin >/dev/null 2>&1 || true
+  docker run --rm -v "${PROJECT}_backend-data:/data/backend" -v "${PROJECT}_tls:/data/tls" -v "$(cd "$(dirname "$file")" && pwd):/in" alpine \
+    sh -c "rm -rf /data/backend/* /data/tls/*; tar xzf /in/$(basename "$file") -C /data backend tls" || die "Restore failed"
+  compose up -d backend admin >/dev/null
+  ok "Restored. Macs keep working: the certificate they trust was restored too"
+}
+
+cmd_reset_password() {
+  need_docker >/dev/null
+  local email pw; email=$(env_get SENTI_ADMIN_EMAIL); email=${1:-${email:-admin@senti.local}}
+  pw=$(rand 20)
+  compose exec -T backend python - "$email" "$pw" <<'PY' || die "Could not reset the password (is Senti running?)"
+import sys
+from app.db import SessionLocal
+from app.models import Admin
+from app.security import hash_password
+email, pw = sys.argv[1], sys.argv[2]
+with SessionLocal() as db:
+    a = db.query(Admin).filter_by(email=email).first() or db.query(Admin).first()
+    if a is None:
+        sys.exit("no admin account")
+    a.password_hash = hash_password(pw)
+    a.token_version = (a.token_version or 0) + 1  # signs out every open session
+    db.commit()
+    print(a.email)
+PY
+  ok "New password for the admin account: $pw   ${C_Y}← save it now${C_0} (everyone signed in was signed out)"
+}
+
+cmd_update() {
+  need_docker >/dev/null
+  if [ -d .git ]; then step "Getting the latest version"; git pull --ff-only || die "Could not update the code (local changes?)"; fi
+  step "Rebuilding and restarting"
+  compose build --quiet && if [ "$(env_get SENTI_AI_MODE)" = local ]; then compose up -d; else compose up -d backend admin; fi
+  ok "Updated. Your data, people and Macs are unchanged"
+}
+
+cmd_uninstall() {
+  need_docker >/dev/null
+  local delete=0; [ "${1:-}" = --delete-data ] && delete=1
+  if [ "$delete" = 1 ]; then
+    warn "This deletes ALL Senti data: people, devices, audit log, certificate (every Mac would have to join again)."
+    if [ "$YES" = 0 ]; then local t; read -r -p "  Type DELETE to confirm: " t || true; [ "$t" = DELETE ] || exit 0; fi
+    compose down -v --remove-orphans
+    ok "Senti and its data were removed (server-data/ with shared files was kept)"
+  else
+    compose down --remove-orphans
+    ok "Senti stopped and removed; its data is kept (reinstall any time, or: ./senti-server uninstall --delete-data)"
+  fi
+}
+
+main() {
+  local cmd=${1:-install}; [ $# -gt 0 ] && shift
+  case "$cmd" in
+    install) cmd_install "$@" ;;
+    status) cmd_status ;;
+    info) cmd_info ;;
+    logs) need_docker >/dev/null; compose logs -f --tail 100 "$@" ;;
+    stop) need_docker >/dev/null; compose stop; ok "Stopped (Macs keep protecting with their saved rules)" ;;
+    start) need_docker >/dev/null; if [ "$(env_get SENTI_AI_MODE)" = local ]; then compose up -d; else compose up -d backend admin; fi; ok "Started" ;;
+    update) cmd_update ;;
+    backup) cmd_backup "$@" ;;
+    restore) cmd_restore "$@" ;;
+    reset-password) cmd_reset_password "$@" ;;
+    uninstall) [ "${1:-}" = --yes ] && { YES=1; shift; }; cmd_uninstall "$@" ;;
+    -h|--help|help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; echo; usage_install ;;
+    *) die "Unknown command '$cmd' (./senti-server help)" ;;
+  esac
+}
+main "$@"

@@ -6,6 +6,8 @@ export default function People() {
   const users = useLoad<User[]>(() => api('/admin/users'))
   const roles = useLoad<Role[]>(() => api('/admin/roles'))
   const { data: profiles } = useLoad<Profile[]>(() => api('/admin/profiles'))
+  const { data: gw } = useLoad<{ active: { compiled: { roles: Record<string, unknown> } } | null }>(() => api('/admin/gateway/policy'))
+  const serverRoles = Object.keys(gw?.active?.compiled.roles ?? {})
   const toast = useToast()
   const [nu, setNu] = useState({ email: '', role_id: 'engineering' })
   const [nr, setNr] = useState('')
@@ -67,15 +69,19 @@ export default function People() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Person</th><th>Role</th><th>Agent profiles</th><th>Mac access</th><th /></tr></thead>
+          <thead><tr><th>Person</th><th>Role</th><th>Agent profiles</th><th>Server access</th><th>Mac access</th><th /></tr></thead>
           <tbody>
-            {(users.data ?? []).length === 0 && <tr><td colSpan={5}><div className="empty">No people yet. Add someone below and send them their invite.</div></td></tr>}
+            {(users.data ?? []).length === 0 && <tr><td colSpan={6}><div className="empty">No people yet. Add someone below and send them their invite.</div></td></tr>}
             {(users.data ?? []).map(u => (
               <Fragment key={u.id}>
                 <tr>
                   <td><b>{u.name || u.email}</b><br /><span className="small muted">{u.email}</span></td>
                   <td style={{ minWidth: 170 }}><select aria-label={`Role for ${u.email}`} value={u.role_id} onChange={e => saveUser(u, { role_id: e.target.value })}>{(roles.data ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
                   <td className="small" style={{ maxWidth: 420 }}>{summary(u)}</td>
+                  <td style={{ minWidth: 150 }}><select aria-label={`Server access for ${u.email}`} value={u.gateway_role ?? ''} onChange={e => saveUser(u, { gateway_role: e.target.value })}>
+                    <option value="">No server access</option>{serverRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                    {u.gateway_role && !serverRoles.includes(u.gateway_role) && <option value={u.gateway_role}>{u.gateway_role} (not in the policy)</option>}
+                  </select></td>
                   <td className="small"><span className={`dot${u.online ? ' on' : ''}`} /> {access(u)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn sm" onClick={() => invite(u)}><Icon name="key" size={16} />{u.invite ? 'New invite' : 'Invite'}</button>
@@ -84,7 +90,7 @@ export default function People() {
                   </td>
                 </tr>
                 {open === u.id && (
-                  <tr className="expanded"><td colSpan={5}>
+                  <tr className="expanded"><td colSpan={6}>
                     <p className="small muted" style={{ marginBottom: 12 }}>Pick a different profile for one of {u.name || u.email}’s agents. “From role” keeps the role’s profile.</p>
                     <div className="grid3">
                       {AGENTS.map(a => (

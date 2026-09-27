@@ -26,7 +26,7 @@ from ..db import SessionLocal, get_db
 from ..gateway_policy import (CompiledPolicy, GatewayDecision, RolePolicy, check_command, check_path, resolve_path, run_sql,
                               visible)
 from ..gateway_policy import run_command as execute_command
-from ..models import KV, Admin, ChangeLog, GatewayAgent, GatewayEvent
+from ..models import KV, Admin, ChangeLog, Device, GatewayAgent, GatewayEvent
 from ..security import current_admin, hash_key, limiter
 
 Auth = Depends(current_admin)
@@ -71,16 +71,29 @@ def policy_model_config(db: Session) -> dict:
     return cfg
 
 
-def agent_for_token(db: Session, raw: str) -> GatewayAgent | None:
+class Caller:
+    """Who is using the gateway: a bot with its own agent token, or a person's AI assistant on an enrolled Mac."""
+
+    def __init__(self, id: str, name: str, role: str, agent_id: str = ""):
+        self.id, self.name, self.role, self.agent_id = id, name, role, agent_id
+
+
+def agent_for_token(db: Session, raw: str) -> Caller | None:
     raw = (raw or "").removeprefix("Bearer ").strip()
-    if not raw.startswith(TOKEN_PREFIX):
-        return None
-    a = db.query(GatewayAgent).filter_by(token_hash=hash_key(raw)).first()
-    return a if a and not a.revoked else None
+    if raw.startswith(TOKEN_PREFIX):
+        a = db.query(GatewayAgent).filter_by(token_hash=hash_key(raw)).first()
+        return Caller(a.id, a.name, a.role, agent_id=a.id) if a and not a.revoked else None
+    if raw.startswith("sdt_"):
+        # an enrolled Mac: the person's server role (set by the admin on the People page) applies to all their assistants
+        d = db.query(Device).filter_by(token_hash=hash_key(raw)).first()
+        if d is None or d.revoked or not (d.user.gateway_role or "").strip():
+            return None
+        return Caller(f"device:{d.id}", f"{d.user.email} · {d.hostname or 'Mac'}", d.user.gateway_role)
+    return None
 
 
 # ---------------------------------------------------------------- deciding one call
-async def supervise(db: Session, agent: GatewayAgent, policy_text: str, role: RolePolicy, tool: str, arg: str,
+async def supervise(db: Session, agent: Caller, policy_text: str, role: RolePolicy, tool: str, arg: str,
                     d: GatewayDecision) -> GatewayDecision:
     """Unclear case: the supervisor LLM decides. No human is watching, so anything but a clear allow is a block."""
     from .device import corp_config
@@ -102,12 +115,12 @@ async def supervise(db: Session, agent: GatewayAgent, policy_text: str, role: Ro
     return GatewayDecision("block", out.get("reason") or "The supervisor did not allow it", "supervisor")
 
 
-def log(agent: GatewayAgent, tool: str, target: str, d: GatewayDecision, t0: float) -> None:
+def log(agent: Caller, tool: str, target: str, d: GatewayDecision, t0: float) -> None:
     with SessionLocal() as db:
         ev = GatewayEvent(agent_id=agent.id, agent_name=agent.name, role=agent.role, tool=tool, target=target[:2000],
                           verdict=d.verdict, layer=d.layer, reason=d.reason[:1000], ms=round((time.perf_counter() - t0) * 1000, 1))
         db.add(ev)
-        a = db.get(GatewayAgent, agent.id)
+        a = db.get(GatewayAgent, agent.agent_id) if agent.agent_id else None
         if a:
             a.last_used, a.calls = time.time(), (a.calls or 0) + 1
         db.commit()
@@ -118,14 +131,13 @@ class Blocked(Exception):
     pass
 
 
-async def gate(ctx: Context, tool: str, arg: str, decide) -> tuple[GatewayAgent, RolePolicy, float]:
+async def gate(ctx: Context, tool: str, arg: str, decide) -> tuple[Caller, RolePolicy, float]:
     """Authenticate, rate-limit, decide (rules → supervisor). Raises Blocked with the reason the agent should see."""
     t0 = time.perf_counter()
     with SessionLocal() as db:
         agent = agent_for_token(db, (ctx.headers or {}).get("authorization", ""))
         if agent is None:
             raise Blocked("Senti: unknown or revoked agent token")
-        db.expunge(agent)
         if not limiter.allow(f"gateway:{agent.id}", settings.gateway_rpm):
             raise Blocked("Senti: too many requests from this agent; slow down")
         policy, text = active_policy(db)
@@ -239,7 +251,8 @@ class TokenGate:
             with SessionLocal() as db:
                 ok = agent_for_token(db, auth) is not None
             if not ok:
-                body = b'{"detail":"agent token required (Authorization: Bearer sag_...)"}'
+                body = (b'{"detail":"agent token required (Authorization: Bearer sag_...), or a Mac enrolled by a person '
+                        b'who has server access (People page)"}')
                 await send({"type": "http.response.start", "status": 401,
                             "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer")]})
                 await send({"type": "http.response.body", "body": body})
@@ -326,11 +339,16 @@ def create_agent(body: AgentIn, admin: Admin = Auth, db: Session = Depends(get_d
     db.add(a)
     db.add(ChangeLog(actor=admin.email, action="gateway_agent.create", target=a.name, detail={"role": role}))
     db.commit()
-    url = (body.base_url.rstrip("/") or "<server-url>") + "/api/v1/mcp/"
+    base = body.base_url.rstrip("/") or "<server-url>"
+    url = base + "/api/v1/mcp/"
+    from .admin import _tls_fingerprint
+    fp = _tls_fingerprint()
+    bridge = ["mcp", "--backend", base, "--token", token] + (["--fingerprint", fp] if fp else [])
     return {**agent_json(a), "token": token, "url": url,  # the token is shown once; only its hash is stored
             "claude_code": f"claude mcp add --transport http senti-server {url} --header \"Authorization: Bearer {token}\"",
-            "mcp_json": {"mcpServers": {"senti-server": {"type": "http", "url": url,
-                                                           "headers": {"Authorization": f"Bearer {token}"}}}}}
+            # through Senti's local bridge: pins this server's (self-signed) certificate, works with any MCP client
+            "bridge_command": "senti mcp --backend " + base + " --token " + token + (f" --fingerprint {fp}" if fp else ""),
+            "mcp_json": {"mcpServers": {"senti-server": {"command": "senti", "args": bridge}}}}
 
 
 @router.delete("/agents/{aid}")

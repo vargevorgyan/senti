@@ -88,7 +88,12 @@ ROLES = [("engineering", "Engineering", "Software engineers"), ("product", "Prod
 
 def seed(db: Session) -> None:
     if not db.query(Admin).first():
-        db.add(Admin(email=settings.admin_email, name="Administrator", password_hash=hash_password(settings.admin_password)))
+        email, pw = settings.admin_email.strip().lower(), settings.admin_password
+        if not pw:  # never create an account with an empty password (e.g. data wiped after the installer cleared .env)
+            import secrets
+            pw = secrets.token_urlsafe(15)
+            print(f"senti: created admin {email} with a one-time password: {pw}  (sign in and change it)", flush=True)
+        db.add(Admin(email=email, name="Administrator", password_hash=hash_password(pw)))
     for rid, name, desc in ROLES:
         if not db.get(Role, rid):
             db.add(Role(id=rid, name=name, description=desc))

@@ -68,6 +68,12 @@ Senti performs the action itself: no shell, confined to the shared folder, minim
 | Scripted agent (13 calls, real MCP client) | all forbidden reads, the card-number column, `../`, `.env`, `bash -c`, `grep -r .` blocked |
 | Real Claude Code session using the gateway | card-number lookup refused; Claude stopped instead of working around it |
 
+# Who can connect
+
+- **People's AI assistants**: through their enrolled Mac and the local bridge (`senti connect` / `senti mcp`); the admin picks
+  each person's server role on the People page. See [Customer onboarding](/guides/customer-onboarding.md).
+- **Bots**: an agent token (`sag_…`), directly or through the bridge.
+
 # Known limits
 
 - A 4B model is a weak **policy compiler** (e.g. hid email/phone the policy allowed, denied a folder it also granted):

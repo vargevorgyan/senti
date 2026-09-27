@@ -16,6 +16,7 @@ Knowledge base for **Senti** — a local guardrail layer between people and the 
 
 # Sections
 
+* [Guides](guides/) - customer onboarding: server installer, invites, one-step Mac setup, connecting assistants
 * [Business](business/) - why Senti exists, positioning, business model, competitors, risks
 * [Use cases](use-cases/) - what people use Senti for: individual developers, teams and organizations, security and compliance
 * [Architecture](architecture/) - how Senti works: hook, engine, judge, sandbox, org backend, admin panel

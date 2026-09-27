@@ -339,6 +339,66 @@ def cmd_check(a) -> int:
     return 0
 
 
+# assistants Senti protects with hooks, detected by their command or their settings folder
+DETECT = {"claude": ("claude", ".claude"), "codex": ("codex", ".codex"), "opencode": ("opencode", ".config/opencode"),
+          "cursor": ("cursor-agent", ".cursor")}
+
+
+def detected_agents() -> list[str]:
+    home = Path(os.environ.get("HOME") or Path.home())
+    return [a for a, (exe, folder) in DETECT.items() if shutil.which(exe) or (home / folder).exists()]
+
+
+def cmd_setup(a) -> int:
+    """One step for employees: join the organization, start Senti, protect the assistants on this Mac, connect them to the
+    company server and start Senti at login. Safe to run again."""
+    import types
+    from . import installers
+    s = Settings.load()
+    if s.device_token and s.backend_url.rstrip("/") == a.backend.rstrip("/"):
+        print(f"1. Already joined {s.org_name or a.backend} as {s.user_email}.")
+    else:
+        if cmd_enroll(a) != 0:
+            return 1
+        if _running():
+            cmd_stop(a)  # restart so the organization's rules apply right away
+    print("2. Starting Senti…")
+    if not _running() and cmd_start(types.SimpleNamespace(foreground=False, no_llm=False)) != 0:
+        return 1
+    agents = detected_agents()
+    print(f"3. Protecting your AI assistants: {', '.join(agents) or 'none found yet (run senti setup again after installing one)'}")
+    if agents and not installers.hook_binary().exists():
+        installers.build_hook()
+    for ag in agents:
+        if ag in installers.INSTALL:
+            print(f"   {ag:9s} → {installers.INSTALL[ag](None)}")
+    print("4. Connecting them to the company server:")
+    cmd_connect(types.SimpleNamespace(assistant="all", remove=False))
+    if not a.no_service:
+        print("5. Starting Senti automatically when you log in:")
+        cmd_service(types.SimpleNamespace(action="install"))
+    print("Done. Restart your AI assistants once. Senti works quietly in the background from now on.")
+    return 0
+
+
+def cmd_mcp(a) -> int:
+    from .mcp_bridge import run
+    return run(a.backend, a.token, a.fingerprint)
+
+
+def cmd_connect(a) -> int:
+    from .connect import ASSISTANTS, CONNECT
+    targets = ASSISTANTS if a.assistant == "all" else [a.assistant]
+    for name in targets:
+        print(f"  {name:15s} {CONNECT[name](remove=a.remove)}")
+    if not a.remove:
+        s = Settings.load()
+        if not s.device_token:
+            print("Note: this Mac hasn't joined an organization yet (senti enroll …); the company server works after that.")
+        print("Restart your AI assistants to see the company-server tools. The admin decides your access (People page).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="senti", description="Senti: a local guardrail for AI agents")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -403,6 +463,24 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("name", nargs="?")
     s.add_argument("--hosts", default="", help="comma-separated sites the secret may be sent to, e.g. api.stripe.com")
     s.set_defaults(fn=cmd_secret)
+    s = sub.add_parser("setup", help="one step for employees: join, start, protect your assistants, connect the company server")
+    s.add_argument("--backend", required=True)
+    s.add_argument("--fingerprint", default="")
+    s.add_argument("--key", default="", help="personal one-time invite key from your administrator (sti_…)")
+    s.add_argument("--code", default="")
+    s.add_argument("--email", default="")
+    s.add_argument("--insecure-http", action="store_true")
+    s.add_argument("--no-service", action="store_true", help="don't start Senti at login")
+    s.set_defaults(fn=cmd_setup)
+    s = sub.add_parser("mcp", help="local MCP server that forwards to the company server gateway (used by your assistants)")
+    s.add_argument("--backend", default="", help="server URL (default: the organization this Mac joined)")
+    s.add_argument("--token", default="", help="agent token (default: this Mac's enrollment)")
+    s.add_argument("--fingerprint", default="", help="pin the server certificate (for --backend)")
+    s.set_defaults(fn=cmd_mcp)
+    s = sub.add_parser("connect", help="add the company server to your AI assistants (Claude Code, Claude Desktop, Cursor, Codex, OpenCode)")
+    s.add_argument("assistant", nargs="?", default="all", choices=["all", "claude", "claude-desktop", "cursor", "codex", "opencode"])
+    s.add_argument("--remove", action="store_true", help="remove it again")
+    s.set_defaults(fn=cmd_connect)
     s = sub.add_parser("check", help="ask the engine about one action")
     s.add_argument("tool")
     s.add_argument("value")

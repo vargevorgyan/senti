@@ -20,6 +20,8 @@ sources:
 | `engine/hook/senti-hook.swift` | Compiled hook client: HTTP/1.1 over the Unix socket, fail closed per agent | spawned by agents |
 | `engine/src/senti/data/opencode-senti.ts` | OpenCode plugin template (installed by `senti install opencode`) | inside OpenCode |
 | `backend/app/` | Org backend: FastAPI + SQLite (admin API, device API, judge gateway, SSE, **server gateway / MCP**: `routers/gateway.py`, `gateway_policy.py`, `policy_compiler.py`) | Docker (`backend`) |
+| `senti-server` | Server installer and manager (install, status, update, backup, restore, reset-password, uninstall) | host |
+| `engine/src/senti/mcp_bridge.py`, `connect.py` | `senti mcp` (stdio → gateway bridge) and `senti connect` (adds `company-server` to assistants); `senti setup` in `cli.py` | Mac |
 | `scripts/gateway_agent.py` | Scripted agent using the server gateway through a real MCP client | host |
 | `demo/make-server-data.py` | Fake company server (files + SQLite) for the gateway demo | host |
 | `admin/src/` | React (Vite, TypeScript) admin panel, design tokens from `docs/design/` | Docker (`admin`, nginx) |

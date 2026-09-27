@@ -13,7 +13,7 @@ interface Draft { text: string; compiled: { roles: Record<string, RoleRules> }; 
 interface Active { text: string; compiled: { roles: Record<string, RoleRules> }; version: number; approved_at: number; approved_by: string }
 interface PolicyState { draft: Draft | null; active: Active | null; inventory: string }
 interface Agent { id: string; name: string; role: string; created_at: number; last_used: number; calls: number; revoked: boolean }
-interface NewAgent extends Agent { token: string; url: string; claude_code: string; mcp_json: unknown }
+interface NewAgent extends Agent { token: string; url: string; claude_code: string; bridge_command: string; mcp_json: unknown }
 interface GwEvent { id: number; ts: number; agent: string; role: string; tool: string; target: string; verdict: string; layer: string; reason: string }
 
 const EXAMPLE = `Support agents can read tickets and customer names and emails, and write notes in tickets/notes. They must never see card numbers or anything in payments.
@@ -117,8 +117,9 @@ export default function Gateway() {
       )}
 
       <section className="panel">
-        <h2>Agents</h2>
-        <p className="small muted">Each agent gets its own token; the token decides its role. Tokens are shown once.</p>
+        <h2>Who can connect</h2>
+        <p className="small"><b>People’s AI assistants</b> (Claude Code, Claude Desktop, Cursor, Codex, OpenCode) connect through their Mac: pick their server role on <a href="/people">People and roles</a>, and their assistants get these tools after <code>senti connect</code> (part of setting up their Mac). No tokens or certificates to handle.</p>
+        <p className="small"><b>Bots and services</b> without a person get their own token below; the token decides the role and is shown once.</p>
         <div className="table-wrap" style={{ border: 'none' }}>
           <table>
             <thead><tr><th>Agent</th><th>Role</th><th>Calls</th><th>Last used</th><th /></tr></thead>
@@ -141,8 +142,9 @@ export default function Gateway() {
         </form>
         {shown && (
           <div style={{ marginTop: 12 }}>
-            <p className="small muted">Connect <b>{shown.name}</b> ({shown.role}). This token is shown only now.</p>
+            <p className="small muted">Connect <b>{shown.name}</b> ({shown.role}). This token is shown only now. The first option is for clients that accept this server’s certificate; the others go through Senti’s local bridge, which pins the certificate.</p>
             <div className="copy"><pre className="mono">{shown.claude_code}</pre><button className="btn" onClick={() => copy(shown.claude_code)}><Icon name="copy" size={16} />Copy</button></div>
+            <div className="copy" style={{ marginTop: 8 }}><pre className="mono">{shown.bridge_command}</pre><button className="btn" onClick={() => copy(shown.bridge_command)}><Icon name="copy" size={16} />Copy</button></div>
             <div className="copy" style={{ marginTop: 8 }}><pre className="mono">{JSON.stringify(shown.mcp_json, null, 2)}</pre><button className="btn" onClick={() => copy(JSON.stringify(shown.mcp_json, null, 2))}><Icon name="copy" size={16} />Copy</button></div>
             <button className="btn ghost sm" onClick={() => setShown(null)}>Done</button>
           </div>

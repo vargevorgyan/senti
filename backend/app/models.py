@@ -38,6 +38,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200), default="")
     role_id: Mapped[str] = mapped_column(ForeignKey("roles.id"), default="engineering")
     agent_profiles: Mapped[dict] = mapped_column(JSON, default=dict)  # per-user override: {agent: profile_id}
+    gateway_role: Mapped[str] = mapped_column(String(64), default="")  # server gateway role for this person's AI assistants
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     role: Mapped[Role] = relationship()
 

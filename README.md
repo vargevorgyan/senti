@@ -31,12 +31,14 @@ the owner in the admin panel. The org side is in Docker; everything local (hooks
 
 ## Quick start
 
-### 1. Organization side (Docker)
+### 1. Organization side
 
 ```bash
-cp .env.example .env            # optional: org name, admin password, model
-docker compose up -d --build    # first start pulls the corporate model (~2 GB)
+./senti-server                  # guided install: a few questions, sensible defaults (needs Docker; installs it on Linux)
 ```
+
+It prints the admin panel address, a one-time admin password and the next steps. Manage it with
+`./senti-server status | logs | update | backup | restore | reset-password | uninstall`.
 
 - Admin panel and device API: <https://localhost:8443> (self-signed certificate) — `admin@senti.local` / `senti-admin`; the panel
   warns until you change the password. Ports bind to 127.0.0.1 unless `SENTI_BIND=0.0.0.0`.
@@ -53,7 +55,8 @@ Requires [uv](https://docs.astral.sh/uv/), Xcode command line tools (for the Swi
 cd engine
 uv sync --extra mlx                    # without --extra mlx: rules + corporate judge only
 uv run senti start                     # first start downloads Qwen3-4B (~2.3 GB) in the background
-uv run senti enroll --backend https://localhost:8443 --fingerprint <sha256> --key sti_…   # the command your admin sent you
+uv run senti setup --backend https://localhost:8443 --fingerprint <sha256> --key sti_…   # the command your admin sent you:
+                                        # joins, starts Senti, protects your assistants, connects them to the company server
 uv run senti stop && uv run senti start
 uv run senti install all               # Claude Code, Codex, OpenCode (user-wide); or --project DIR
 uv run senti status
@@ -105,7 +108,9 @@ OpenCode. The admin panel's Overview and Activity update live. Full script: [.ok
 AI agents can use a company server's files, commands and database **only through Senti** (MCP at `/api/v1/mcp/`).
 In the admin panel's **Server gateway** page, describe access in plain English ("Support agents can read tickets and customer
 names, never card numbers or payments…"), click **Generate rules**, review the rules and example actions, and approve. Then
-add an agent: its token decides its role, and the page shows the `claude mcp add …` command / MCP JSON to connect it.
+give people **server access** on the People page: `senti setup` / `senti connect` adds a `company-server` entry to their
+Claude Code, Claude Desktop, Cursor, Codex and OpenCode (through a local bridge, so no certificates or tokens to handle).
+Bots without a person get an agent token and a ready command on the Server gateway page.
 Every call is checked by hard rules and the compiled role rules; anything they don't cover goes to the supervisor model
 (no human in the loop, only a clear "allow" passes). Try it with fake data:
 

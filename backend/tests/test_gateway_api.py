@@ -181,3 +181,34 @@ def test_gateway_rate_limit(client, gw, monkeypatch):
     t = gw["agent"]["token"]
     outs = [call(client, t, "read_file", path="tickets/1.md") for _ in range(3)]
     assert outs[:2] == ["printer broken"] * 2 and "too many requests" in outs[2]
+
+
+# ---------------------------------------------------------------- people's Macs (device tokens) instead of agent tokens
+def _set_gateway_role(client, admin_headers, email, role):
+    u = next(x for x in client.get("/api/v1/admin/users", headers=admin_headers).json() if x["email"] == email)
+    r = client.put(f"/api/v1/admin/users/{u['id']}", headers=admin_headers, json={**u, "gateway_role": role})
+    assert r.status_code == 200, r.text
+    return u
+
+
+def test_enrolled_mac_needs_server_access_from_admin(client, admin_headers, gw, device):
+    tok = device["device_token"]
+    assert rpc(client, tok, "tools/list").status_code == 401, "no server role yet → no access"
+    _set_gateway_role(client, admin_headers, "dev@acme.test", "support")
+    assert call(client, tok, "read_file", path="tickets/1.md") == "printer broken"
+    assert call(client, tok, "read_file", path="payments/cards.csv").startswith("Blocked by Senti")
+    ev = client.get("/api/v1/admin/gateway/events", headers=admin_headers).json()
+    assert ev[0]["agent"].startswith("dev@acme.test · mac-1") and ev[0]["role"] == "support"
+
+
+def test_revoked_mac_loses_server_access(client, admin_headers, gw, device):
+    _set_gateway_role(client, admin_headers, "dev@acme.test", "support")
+    client.post(f"/api/v1/admin/devices/{device['device_id']}/revoke", headers=admin_headers)
+    assert rpc(client, device["device_token"], "tools/list").status_code == 401
+
+
+def test_removing_server_access_takes_effect_immediately(client, admin_headers, gw, device):
+    u = _set_gateway_role(client, admin_headers, "dev@acme.test", "support")
+    assert rpc(client, device["device_token"], "tools/list").status_code == 200
+    client.put(f"/api/v1/admin/users/{u['id']}", headers=admin_headers, json={**u, "gateway_role": ""})
+    assert rpc(client, device["device_token"], "tools/list").status_code == 401
