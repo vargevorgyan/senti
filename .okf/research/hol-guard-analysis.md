@@ -34,7 +34,7 @@ Also ships `plugin-scanner` (CI scanning of agent plugins/skills/MCP servers). O
 
 - **No LLM / no task context** (does not install `UserPromptSubmit` for Claude Code).
 - **Python scripts not read**: `python script.py` in the workspace is explicitly excluded from the destructive category; only shell scripts (`bash x.sh`, `./x.sh`, `source`) are opened and scanned. A `.py` that uploads `~/.ssh/id_rsa` would likely pass.
-- Developer/security-team UX, not plain language; no open-source native Mac app.
+- Developer/security-team UX, not plain language. (Senti also ships no desktop app: it works through hooks and the agents' own prompts, per [ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md).)
 
 A live test via `uvx hol-guard command test` was inconclusive (native runtime unavailable in the sandboxed install).
 

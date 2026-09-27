@@ -1,6 +1,6 @@
 # Senti — instructions for AI agents
 
-Senti is a local guardrail layer that checks every action an AI agent (Claude Code, Codex, OpenCode, ...) is about to take and allows, asks about, or blocks it, using fast rules plus a local LLM judge.
+Senti is a local guardrail layer that checks every action an AI agent (Claude Code, Codex, OpenCode, Cursor, Cline, Hermes, OpenClaw) is about to take and allows, asks about, or blocks it, using fast rules plus a local LLM judge. On the Mac it is **hooks/plugins + a local engine — there is no UI app** (ADR-010); organizations add a backend and admin panel in Docker.
 
 ## Read the knowledge base first
 
@@ -19,6 +19,8 @@ The project knowledge base lives in [`.okf/`](.okf/index.md) (Open Knowledge For
 
 ## Code map
 
-- `prototype/engine/` — working Python engine + Swift hook (see [`.okf/prototype.md`](.okf/prototype.md)).
-- `prototype/bench/`, `prototype/results/` — benchmarks and raw results.
-- The SwiftUI app and org backend are not started yet.
+- `engine/` — the local engine (Python package `senti`, FastAPI on a Unix socket), CLI, Swift hook client, agent plugins. Runs natively on the Mac, never in Docker.
+- `backend/` — organization backend (FastAPI + SQLite), `admin/` — React admin panel; both in Docker (`docker-compose.yml`).
+- `scripts/`, `demo/` — end-to-end checks and the poisoned demo repo; `TASKS.md` — task board.
+- `prototype/` — the original ideathon prototype and benchmarks (reference only).
+- There is **no client UI app**: asking the person uses the agent's own prompt, a macOS dialog, or owner approvals in the admin panel. See [`.okf/code-guide.md`](.okf/code-guide.md).

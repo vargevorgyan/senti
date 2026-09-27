@@ -22,7 +22,7 @@ sources:
 |---|---|---|---|
 | **[HOL Guard](/research/hol-guard-analysis.md)** (hashgraph-online/hol-guard, ~669★) | "Antivirus for AI agents": hooks for ~16 agents, deterministic rules (Rust runtime + Python control plane), browser dashboard, optional paid Guard Cloud | Apache-2.0 | **Main competitor.** No LLM in the decision path; does not read `.py` scripts before `python x.py`. Separate closed desktop app. |
 | unalome-ai/unalome-firewall | Desktop app (Rust) showing agent activity in plain language, MCP config scanning, cost tracking, PII detection | **no license** (cannot fork) | Closest *UX* competitor, but mostly observes after the fact |
-| iainnash/flowgate | Native macOS (Swift) approval UI for Claude Code PreToolUse hooks; Go server + Go hook | MIT | Reference for Swift approval UI; small (3★), last push May 2026 |
+| iainnash/flowgate | Native macOS (Swift) approval UI for Claude Code PreToolUse hooks; Go server + Go hook | MIT | Was a reference for a Swift approval UI; not needed since Senti has no client app ([ADR-010](/decisions/adr-010-no-client-ui-fastapi-react.md)); small (3★), last push May 2026 |
 | mayankjain0141/nixis | Go "AI agent firewall" for Claude Code; CEL policies, secret scanning, dashboard | MIT | Good rule ideas (`.env`→curl, reverse shells, typosquatting) |
 | luckyPipewrench/pipelock | Go agent firewall / egress proxy; scans HTTP, MCP, WebSocket for exfiltration, SSRF, injection | Apache-2.0 | Egress/DLP patterns |
 | darfaz/clawmoat | JS agent firewall (data leaks, dangerous tools, poisoned deps) | MIT | Rule ideas |

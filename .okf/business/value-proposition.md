@@ -4,7 +4,7 @@ title: Value proposition and pitch
 description: What Senti promises, the differentiators that the big agent vendors will not build, and the one-line pitch.
 tags: [business, positioning, pitch]
 status: draft
-generated: { by: claude-code/2.1.283, at: '2026-09-26T18:30:00Z' }
+generated: { by: claude-code/2.1.283, at: '2026-09-27T12:00:00Z' }
 stale_after: 2026-12-31
 sources:
   - id: session
@@ -27,12 +27,12 @@ sources:
 | **Reads scripts before they run** | Catches `python3 run_tests.py` that exfiltrates secrets | HOL Guard reads shell scripts only, not `.py` |
 | **100% local / on-prem**, including the judge model | Privacy; nothing about the user's activity leaves the machine/company | — |
 | **Plain-language explanations** for non-technical users | Users can make informed allow/block choices | Unalome (observability, after the fact) |
-| **Native macOS app** | Open-source competitors ship CLI + browser dashboards only | HOL Guard Desktop is closed/separate |
+| **Invisible by design**: hooks and plugins, no app to open | Protection lives inside the agents people already use; the only UI is the agent's own prompt, a macOS dialog when needed, and the org admin panel | HOL Guard (hooks, plus a separate closed desktop app) |
 
-# Candidate differentiating features (not built yet)
+# Differentiating features (built)
 
-Undo/"time machine" before destructive actions, honeytokens, secret brokering, task-scope contracts —
-see [Roadmap](/roadmap/roadmap.md).
+Undo/"time machine" before destructive actions, honeytokens, secret brokering, task-scope contracts, a model gateway for
+home-made agents — see [Roadmap](/roadmap/roadmap.md) and [Use cases](/use-cases/).
 
 # Honest risks to address in the pitch
 
