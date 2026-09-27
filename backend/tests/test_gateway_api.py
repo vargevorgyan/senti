@@ -212,3 +212,19 @@ def test_removing_server_access_takes_effect_immediately(client, admin_headers, 
     assert rpc(client, device["device_token"], "tools/list").status_code == 200
     client.put(f"/api/v1/admin/users/{u['id']}", headers=admin_headers, json={**u, "gateway_role": ""})
     assert rpc(client, device["device_token"], "tools/list").status_code == 401
+
+
+# ---------------------------------------------------------------- no AI model yet
+def test_compile_without_a_model_explains_what_to_do(client, admin_headers, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config.settings, "corp_model_enabled", False)
+    monkeypatch.setattr(config.settings, "policy_model_url", "")
+    r = client.post("/api/v1/admin/gateway/policy/compile", headers=admin_headers, json={"text": POLICY_TEXT})
+    assert r.status_code == 503 and "Corporate judge" in r.json()["detail"]
+
+
+def test_compile_with_an_unreachable_model_says_so(client, admin_headers, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config.settings, "policy_model_url", "http://127.0.0.1:9/v1")
+    r = client.post("/api/v1/admin/gateway/policy/compile", headers=admin_headers, json={"text": POLICY_TEXT})
+    assert r.status_code == 503 and "Can't reach the AI model at http://127.0.0.1:9/v1" in r.json()["detail"]

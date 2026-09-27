@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -288,8 +289,15 @@ class PolicyIn(BaseModel):
 async def compile_policy(body: PolicyIn, admin: Admin = Auth, db: Session = Depends(get_db)):
     if len(body.text.strip()) < 10:
         raise HTTPException(422, "describe who may do what, in a few sentences")
+    cfg = policy_model_config(db)
+    if not settings.policy_model_url and not cfg.get("enabled", True):
+        raise HTTPException(503, "No AI model is set up to turn the policy into rules. Choose one on the Corporate judge "
+                                 "page (any OpenAI-compatible API) or set SENTI_POLICY_MODEL_URL, then generate again.")
     try:
-        out = await policy_compiler.compile_policy(policy_model_config(db), body.text, RunnerOps())
+        out = await policy_compiler.compile_policy(cfg, body.text, RunnerOps())
+    except httpx.TransportError as e:
+        raise HTTPException(503, f"Can't reach the AI model at {cfg.get('url', '?')} ({type(e).__name__}). Check the "
+                                 "Corporate judge page or SENTI_POLICY_MODEL_URL, then generate again.")
     except Exception as e:
         raise HTTPException(502, f"could not compile the policy: {type(e).__name__}: {str(e)[:300]}")
     draft = {"text": body.text, **out, "compiled_at": time.time(), "compiled_by": admin.email}
