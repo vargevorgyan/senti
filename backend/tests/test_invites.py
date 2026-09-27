@@ -28,6 +28,8 @@ def test_invite_enrolls_the_right_person_and_role(client, admin_headers):
     assert inv["key"].startswith("sti_")
     assert inv["link"] == f"https://senti.acme.test:8443/join#s=senti.acme.test:8443&k={inv['key']}"
     assert inv["command"] == f"senti join '{inv['link']}'" and "--key" in inv["setup_command"]
+    # no own CA here (publicly trusted certificate): the server serves its own installer
+    assert inv["install_command"] == f"curl -fsSL https://senti.acme.test:8443/install.sh | sh -s -- '{inv['link']}'"
     r = enroll_key(client, inv["key"])
     assert r.status_code == 200, r.text
     assert r.json()["user"] == {"email": "anna@acme.test", "role": "product"}

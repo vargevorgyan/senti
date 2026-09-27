@@ -68,6 +68,17 @@ def invite_info(body: InviteInfoIn, request: Request, db: Session = Depends(get_
     return {"org_name": settings.org_name, "email": inv.user.email, "role": inv.user.role_id, "expires_at": inv.expires_at}
 
 
+@router.get("/installer")
+def installer():
+    """For the public join page: where the Mac installer comes from (see settings.installer_url)."""
+    return {"url": settings.installer_url if _own_ca() else "/install.sh"}
+
+
+def _own_ca() -> bool:
+    import os
+    return bool(settings.tls_ca and os.path.exists(settings.tls_ca))
+
+
 @router.get("/tls/ca", response_class=PlainTextResponse)
 def tls_ca():
     """This server's own certificate authority (self-signed deployments). Macs download it once over an unverified

@@ -389,7 +389,9 @@ def create_invite(uid: int, body: InviteIn, admin: Admin = Auth, db: Session = D
     join_page = (settings.join_page or f"{backend}/join").rstrip("/")
     link = f"{join_page}#s={quote(host, safe=':[]')}&k={key}" + (f"&fp={fp}" if fp else "")
     # the key is returned exactly once; only its hash is stored
+    installer = settings.installer_url if fp else f"{backend}/install.sh"
     return {**invite_json(inv), "key": key, "link": link, "command": f"senti join '{link}'",
+            "install_command": f"curl -fsSL {installer} | sh -s -- '{link}'",
             "setup_command": f"senti setup --backend {backend}" + (f" --fingerprint {fp}" if fp else "") + f" --key {key}"}
 
 

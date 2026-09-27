@@ -1,7 +1,11 @@
 """Backend settings from environment variables (see docker-compose.yml / .env.example)."""
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEFAULT_INSTALLER = "https://raw.githubusercontent.com/vargevorgyan/senti/main/engine/install.sh"
 
 
 class Settings(BaseSettings):
@@ -44,6 +48,9 @@ class Settings(BaseSettings):
     public_url: str = ""
     # Join page for invite links. Empty: the /join page of this server's admin panel.
     join_page: str = ""
+    # The Mac installer script. Servers with Senti's own certificate need it from a publicly trusted address (it then
+    # checks this server against the invite's fingerprint); servers with a public certificate serve their own /install.sh.
+    installer_url: str = DEFAULT_INSTALLER
     # Gateway tools run in the isolated runner container (Unix socket). Running them inside the backend process, next to
     # the signing key and the database, is only for tests and development and must be switched on explicitly.
     gateway_runner: str = ""
@@ -58,6 +65,16 @@ class Settings(BaseSettings):
     token_ttl_hours: int = 8
     tls_cert: str = ""       # path to the TLS certificate served by the admin container
     https_port: int = 8443
+
+    @field_validator("installer_url")
+    @classmethod
+    def _installer_default(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            return DEFAULT_INSTALLER  # an empty SENTI_INSTALLER_URL= line in .env means "the default"
+        if not v.startswith("https://"):
+            raise ValueError("SENTI_INSTALLER_URL must be an https:// address")
+        return v
 
     @property
     def gateway_root_path(self) -> str:

@@ -269,6 +269,8 @@ SENTI_PUBLIC_URL=https://$PUBLIC_HOST:$HTTPS_PORT
 SENTI_ADMIN_ALLOW=$admin_allow
 # Invite links open this page (empty: this server's own /join page; or your website's join page)
 SENTI_JOIN_PAGE=$(env_get SENTI_JOIN_PAGE)
+# Where Macs get the installer script (empty: Senti's GitHub, main branch)
+SENTI_INSTALLER_URL=$(env_get SENTI_INSTALLER_URL)
 EOF
   umask 022
   mkdir -p server-data

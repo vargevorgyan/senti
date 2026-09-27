@@ -241,6 +241,9 @@ def test_ca_endpoint_and_invite_fingerprint(client, admin_headers, tmp_path, mon
     u = client.post("/api/v1/admin/users", headers=admin_headers, json={"email": "c@acme.test", "role_id": "product"}).json()
     inv = client.post(f"/api/v1/admin/users/{u['id']}/invites", headers=admin_headers, json={"backend": "https://srv:8443"}).json()
     assert inv["link"].endswith(f"&fp={fp}"), "Macs pin the CA, so the server certificate can be renewed"
+    # own CA: the installer comes from a publicly trusted address and checks this server by the fingerprint
+    assert inv["install_command"].startswith("curl -fsSL https://raw.githubusercontent.com/")
+    assert client.get("/api/v1/installer").json()["url"].startswith("https://raw.githubusercontent.com/")
 
 
 def test_public_certificate_needs_no_fingerprint(client, admin_headers, tmp_path, monkeypatch):

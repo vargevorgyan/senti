@@ -34,16 +34,29 @@ def hook_binary() -> Path:
     return senti_home() / "bin" / "senti-hook"
 
 
+def swift_available() -> bool:
+    """True only if Apple's command line tools are really installed. Without them /usr/bin/swiftc (and python3) are
+    stubs that open an install dialog and fail, so "which swiftc" alone is not enough."""
+    if not shutil.which("swiftc"):
+        return False
+    try:
+        return subprocess.run(["xcode-select", "-p"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def build_hook(source: Path | None = None) -> Path:
     """Compile the Swift hook client into ~/.senti/bin (falls back to the Python client if swiftc is missing)."""
+    import sys
     dst = hook_binary()
     dst.parent.mkdir(parents=True, exist_ok=True)
     src = source or Path(__file__).resolve().parents[2] / "hook" / "senti-hook.swift"
-    if shutil.which("swiftc") and src.exists():
-        subprocess.run(["swiftc", "-O", str(src), "-o", str(dst)], check=True)
+    if swift_available() and src.exists():
+        subprocess.run(["swiftc", "-O", str(src), "-o", str(dst)], check=True, capture_output=True)
     else:
+        # Senti's own Python (never the system python3, which may be the command-line-tools stub)
         py = Path(__file__).with_name("hook_client.py")
-        dst.write_text(f"#!/bin/sh\nexec python3 {py} \"$@\"\n")
+        dst.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{py}" "$@"\n')
         dst.chmod(0o755)
     return dst
 
@@ -57,8 +70,8 @@ def build_key_helper(source: Path | None = None) -> Path:
     device key falls back to a software key (see devicekey.py)."""
     dst = key_helper_binary()
     src = source or Path(__file__).resolve().parents[2] / "hook" / "senti-key.swift"
-    if not (shutil.which("swiftc") and src.exists()):
-        raise FileNotFoundError("swiftc or senti-key.swift missing")
+    if not (swift_available() and src.exists()):
+        raise FileNotFoundError("Apple's command line tools (swiftc) or senti-key.swift missing")
     dst.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["swiftc", "-O", str(src), "-o", str(dst)], check=True, capture_output=True)
     return dst

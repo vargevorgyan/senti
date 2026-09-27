@@ -70,7 +70,10 @@ services:
       retries: 5
 
   admin:
-    build: ./admin
+    build:
+      context: ./admin
+      additional_contexts:
+        engine: ./engine   # the Mac engine + installer, served at /downloads/ and /install.sh
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
