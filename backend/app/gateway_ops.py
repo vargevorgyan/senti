@@ -220,6 +220,9 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(db, str):
         return {"error": "bad request"}
     d, extra = decide(role, tool, arg, src, db)
+    if op == "exec" and d.verdict == "supervisor" and req.get("supervised") is not True:
+        # the rules allowed it at check time but not any more (the files changed): nobody approved this version
+        d = GatewayDecision("block", f"{d.reason}; it changed since it was checked, try again", "hard-rule")
     if op == "check" or d.verdict == "block":
         return {"decision": decision_json(d), **extra}
     if tool == "query_db":

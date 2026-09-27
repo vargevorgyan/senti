@@ -347,3 +347,28 @@ def test_corporate_model_defaults_come_from_the_installer(tmp_path, monkeypatch)
     with SessionLocal() as db:
         cfg = corp_config(db)
     assert cfg["api_key"] == "sk-test" and cfg["enabled"] is False
+
+
+def test_runner_runs_a_supervisor_case_only_when_the_supervisor_approved(tmp_path, monkeypatch):
+    from app import config, gateway_ops
+    srv = tmp_path / "srv"
+    (srv / "reports").mkdir(parents=True)
+    (srv / "reports" / "q3.md").write_text("revenue")
+    monkeypatch.setattr(config.settings, "gateway_root", str(srv))
+    role = {"files": {"read": ["tickets/**"]}}  # reports/ is not covered: the supervisor decides
+    req = {"op": "exec", "tool": "read_file", "arg": "reports/q3.md", "role": role}
+    assert gateway_ops.handle(req)["decision"]["verdict"] == "block" and "output" not in gateway_ops.handle(req)
+    assert gateway_ops.handle({**req, "supervised": True})["output"] == "revenue"
+
+
+def test_rgrep_cant_read_a_denied_file(tmp_path, monkeypatch):
+    from app import config, gateway_ops
+    srv = tmp_path / "srv"
+    for rel, text in {"tickets/1.md": "printer", "payments/cards.csv": "4111111111111111"}.items():
+        (srv / rel).parent.mkdir(parents=True, exist_ok=True)
+        (srv / rel).write_text(text)
+    monkeypatch.setattr(config.settings, "gateway_root", str(srv))
+    role = {"commands": {"allow": ["rgrep", "grep"]}, "files": {"read": ["**"], "deny": ["payments/**"]}}
+    for cmd in ("rgrep 4111", "rgrep 4111 .", "diff -r tickets payments"):
+        out = gateway_ops.handle({"op": "exec", "tool": "run_command", "arg": cmd, "role": role})
+        assert out["decision"]["verdict"] == "block" and "4111" not in str(out.get("output", "")), cmd

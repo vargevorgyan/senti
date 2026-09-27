@@ -60,13 +60,21 @@ opt-in only.
 - **Token = identity and role**: `sag_…` tokens, only the SHA-256 stored, shown once, revocable; the whole MCP endpoint
   (even tool listing) returns 401 without a valid token; per-agent rate limit (`SENTI_GATEWAY_RPM`).
 - **Files**: resolved real paths must stay inside the shared folder (symlinks followed); listings hide denied and unrelated entries.
-- **Commands**: parsed with `shlex`, run without a shell; 70+ programs never allowed (shells, interpreters, network, `sed`/`awk`,
-  `git`, `sqlite3`…); `find -exec/-delete`, `sort -o` etc. blocked; path arguments pass the same file rules; programs that write
-  (`cp`, `mv`, `rm`…) need write rules; recursive tools (`grep -r`, `ls -R`, `find`) only on folders the role fully owns.
-  Absolute or `~` paths in commands are refused (the program would get the real path, not the shared folder's).
+- **Commands**: parsed with `shlex`, run without a shell; 150+ programs never allowed (shells, interpreters and their
+  versioned names like `perl5.40.1`/`python3.12`, `uv`/`npm`/compilers, network, `sed`/`awk`/`nawk`, wrappers that run another
+  program such as `nice`/`stdbuf`/`setsid`/`chroot`/`flock`/`run-parts`/`ld.so`, `link`/`hardlink`, `git`, `sqlite3`…); flags
+  that run programs or read unchecked files are blocked, including abbreviations and short-option clusters (`find -exec`,
+  `tar --to-com`/`-I`/`-F`, `split --filter`, `sort -o`/`--files0-from`, `sdiff --diff-program`); path arguments pass the same
+  file rules, also when glued to a short option (`-fFILE`); every argument of a program that writes (`cp`, `mv`, `rm`, `touch`…)
+  is a target that needs write rules, existing or not; any program given a folder (not only `grep -r`: `rgrep`, `diff -r`,
+  `mv`, `rm -r`) needs the whole folder allowed and nothing denied inside; archives (`tar`, `unzip`) need the whole shared folder.
+  Absolute or `~` paths in commands are refused (the program would get the real path, not the shared folder's). The runner
+  re-checks at run time and runs a "supervisor" verdict only when the supervisor approved that call (`supervised`).
 - **Database**: SQLite opened read-only unless the role has write tables; `set_authorizer` decides every read/write per
   table and column (so `select *` fails if it includes a hidden column); no PRAGMA/ATTACH/DDL; table names visible, full schema not.
-  `WITH` names are allowed but their bodies are checked; queries stop after 5 s; checks and commands run off the event loop.
+  Only the database's real tables and views count as tables: a `WITH` name never unlocks one (`WITH secrets AS (…) SELECT *
+  FROM main.secrets` is refused), and `WITH` bodies are checked table by table; queries stop after 5 s; checks and commands
+  run off the event loop.
 - **Compilation is checked, not trusted**: the schema drops paths outside the root and dangerous programs; warnings list
   contradictions (granted and denied), unknown tables/columns and hidden columns to double-check; example actions are replayed
   (SQL against a throwaway copy of the database) and shown as ✓/⚠ before the admin approves.

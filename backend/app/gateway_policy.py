@@ -28,14 +28,66 @@ HARD_DENY_PROGRAMS = {
     "ncat", "socat", "telnet", "ftp", "awk", "gawk", "mawk", "sed", "vi", "vim", "nvim", "emacs", "less", "more", "man", "git",
     "make", "docker", "kubectl", "chmod", "chown", "ln", "dd", "mkfs", "mount", "crontab", "launchctl", "systemctl", "kill",
     "pkill", "killall", "nohup", "timeout", "watch", "script", "expect", "tclsh", "open", "security", "sqlite3", "psql", "mysql",
+    # more shells, interpreters, package runners and compilers (any of them runs code)
+    "rbash", "busybox", "toybox", "nawk", "pwsh", "powershell", "irb", "jshell", "java", "julia", "r", "rscript", "erl",
+    "elixir", "iex", "ghci", "runghc", "wish", "uv", "uvx", "pip", "pip3", "pipx", "npm", "npx", "pnpm", "yarn", "corepack",
+    "gem", "bundle", "cargo", "go", "gcc", "g++", "cc", "c++", "clang", "tcc", "ld", "as", "cmake", "ninja", "ldd", "openssl",
+    # programs that run another program given as an argument
+    "nice", "renice", "ionice", "stdbuf", "setsid", "chroot", "setarch", "linux32", "linux64", "taskset", "chrt", "prlimit",
+    "runcon", "runuser", "setpriv", "unshare", "nsenter", "flock", "sg", "newgrp", "login", "start-stop-daemon", "run-parts",
+    "scriptlive", "scriptreplay", "strace", "ltrace", "gdb", "valgrind", "time", "command", "exec", "eval", "builtin",
+    "dpkg", "apt", "apt-get", "apt-config", "service", "invoke-rc.d", "update-alternatives", "gzexe", "zless", "zmore",
+    "pager", "vipw", "vigr",
+    # links: a hard link puts a denied file's content under a path the role can read
+    "link", "hardlink", "mknod",
 }
-# Flags that turn an otherwise read-only program into one that executes or deletes things
-HARD_DENY_FLAGS = {
-    "find": {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"},
-    "sort": {"-o", "--output", "--compress-program"},
-    "tar": {"--to-command", "--checkpoint-action", "--use-compress-program", "-I"},
-    "zip": {"-T", "--unzip-command", "-TT"},
+# versioned names of the same interpreters (perl5.40.1, python3.12, ld-linux-x86-64.so.2, …)
+_VERSIONED = re.compile(r"^(?:python|perl|ruby|php|lua|node|tclsh|wish|pip)[\d.]+$|^ld(?:-linux[\w.-]*)?\.so(?:\.\d+)*$")
+
+
+def hard_denied_program(argv0: str) -> bool:
+    prog = os.path.basename(argv0).lower()
+    return prog in HARD_DENY_PROGRAMS or bool(_VERSIONED.match(prog)) or prog.startswith("debconf")
+
+
+# Flags that turn an otherwise harmless program into one that executes, deletes or reads files the checker never sees.
+# "long": GNU long options (any unambiguous abbreviation counts, e.g. --to-com); "short": single-letter options, also
+# inside clusters like -xvF; "words": single-dash word options (find).
+HARD_DENY_FLAGS: dict[str, dict[str, set[str]]] = {
+    "find": {"words": {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls",
+                       "-files0-from"}},
+    "sort": {"long": {"--output", "--compress-program", "--files0-from"}, "short": {"o"}},
+    "tar": {"long": {"--to-command", "--checkpoint-action", "--use-compress-program", "--info-script",
+                     "--new-volume-script", "--rsh-command", "--rmt-command"}, "short": {"I", "F"}},
+    "zip": {"long": {"--unzip-command"}, "short": {"T"}, "words": {"-TT"}},
+    "split": {"long": {"--filter"}},
+    "sdiff": {"long": {"--diff-program", "--output"}, "short": {"o"}},
+    "diff3": {"long": {"--diff-program"}},
+    "wc": {"long": {"--files0-from"}},
+    "du": {"long": {"--files0-from"}},
 }
+
+
+def denied_flag(prog: str, args: list[str]) -> str | None:
+    rules = HARD_DENY_FLAGS.get(prog)
+    if not rules:
+        return None
+    for i, a in enumerate(args):
+        if a == "--":
+            break
+        if a in rules.get("words", set()):
+            return a
+        if a.startswith("--") and len(a) > 2:
+            name = a.split("=", 1)[0]
+            hit = next((o for o in sorted(rules.get("long", set())) if o.startswith(name)), None)
+            if hit:
+                return hit
+        elif a.startswith("-") or (prog == "tar" and i == 0):  # tar's first argument may be a dashless cluster (xvF)
+            cluster = a.lstrip("-")
+            hit = next((c for c in cluster if c in rules.get("short", set())), None)
+            if hit:
+                return f"-{hit}"
+    return None
 
 
 class FileRules(BaseModel):
@@ -62,7 +114,7 @@ class CommandRules(BaseModel):
     @field_validator("allow")
     @classmethod
     def _no_dangerous(cls, v: list[str]) -> list[str]:
-        return sorted({os.path.basename(p.strip()) for p in v if p.strip() and os.path.basename(p.strip()) not in HARD_DENY_PROGRAMS})
+        return sorted({os.path.basename(p.strip()) for p in v if p.strip() and not hard_denied_program(p.strip())})
 
 
 class DatabaseRules(BaseModel):
@@ -231,9 +283,16 @@ def visible(role: RolePolicy, rel: str) -> bool:
 
 
 # ---------------------------------------------------------------- commands
-RECURSIVE_PROGRAMS = {"grep", "egrep", "fgrep", "rg", "ag", "find", "fd", "ls", "du", "tree", "tar", "zip", "cp", "wc"}
-WRITE_PROGRAMS = {"cp", "mv", "rm", "rmdir", "touch", "mkdir", "tee", "truncate", "install", "split", "unzip", "tar", "zip",
-                  "patch", "rename"}
+RECURSIVE_PROGRAMS = {"grep", "egrep", "fgrep", "rgrep", "zgrep", "zegrep", "zfgrep", "rg", "ag", "find", "fd", "ls", "dir",
+                      "vdir", "du", "tree", "tar", "zip", "unzip", "cp", "wc", "diff"}
+WRITE_PROGRAMS = {"cp", "mv", "rm", "rmdir", "unlink", "shred", "touch", "mkdir", "mktemp", "tee", "truncate", "fallocate",
+                  "install", "split", "csplit", "unzip", "tar", "zip", "gzip", "gunzip", "uncompress", "patch", "rename",
+                  "rename.ul"}
+# programs that only look at a folder itself (its name, metadata or emptiness), never at the files inside it
+NAME_ONLY_PROGRAMS = {"stat", "file", "namei", "realpath", "readlink", "basename", "dirname", "test", "[", "mkdir", "rmdir",
+                      "touch"}
+# archives can hold any path, so extracting one may write anywhere: they need the whole shared folder
+ARCHIVE_PROGRAMS = {"tar", "unzip"}
 
 
 def check_command(role: RolePolicy, root: Path, command: str) -> tuple[GatewayDecision, list[str]]:
@@ -243,43 +302,61 @@ def check_command(role: RolePolicy, root: Path, command: str) -> tuple[GatewayDe
         argv = shlex.split(command)
     except ValueError:
         return block("The command could not be parsed", "hard-rule"), []
+    if not argv:
+        return block("Empty or oversized command", "hard-rule"), []
     prog = os.path.basename(argv[0])
-    if prog in HARD_DENY_PROGRAMS or "/" in argv[0]:
+    if hard_denied_program(argv[0]) or "/" in argv[0]:
         return block(f"'{prog}' can run arbitrary code, reach the network or change the system; it is never allowed here",
                      "hard-rule"), argv
-    bad = HARD_DENY_FLAGS.get(prog, set()) & {a.split("=")[0] for a in argv[1:]}
+    bad = denied_flag(prog, argv[1:])
     if bad:
-        return block(f"'{prog} {sorted(bad)[0]}' can run or delete things; not allowed", "hard-rule"), argv
+        return block(f"'{prog} {bad}' can run programs, delete things or read files unchecked; not allowed", "hard-rule"), argv
     mode = "write" if prog in WRITE_PROGRAMS else "read"
     paths = []
     for a in argv[1:]:
-        if a.startswith("-") and "=" not in a:
-            continue
-        cand = a.split("=", 1)[1] if a.startswith("-") else a
-        if cand.startswith(("/", "~")) and not cand.startswith(str(root) + "/"):
-            # the program would receive the real absolute path (no remapping happens when it runs): never outside the root
-            return block(f"'{cand}' is an absolute path; use paths relative to the shared folder", "hard-rule"), argv
-        if "/" in cand or cand in {".", ".."} or (root / cand).exists():
-            paths.append(cand)
-    if not paths and prog in RECURSIVE_PROGRAMS:
-        paths = ["."]  # these default to the current folder, i.e. the whole shared root
+        if a.startswith("-"):
+            if "=" in a:
+                cands = [a.split("=", 1)[1]]
+            elif not a.startswith("--") and len(a) > 2:
+                # a value glued to a short option (-fFILE, -rfFILE): any tail that names a path is checked like one
+                cands = [a[i:] for i in range(2, len(a)) if "/" in a[i:] or a[i:].startswith("~") or (root / a[i:]).exists()]
+            else:
+                continue
+        else:
+            cands = [a]
+        for cand in cands:
+            if cand.startswith(("/", "~")) and not cand.startswith(str(root) + "/"):
+                # the program would receive the real absolute path (no remapping happens when it runs): never outside the root
+                return block(f"'{cand}' is an absolute path; use paths relative to the shared folder", "hard-rule"), argv
+            # a write program's arguments are all targets, existing or not (touch new.txt, cp a.txt b.txt)
+            if mode == "write" or "/" in cand or cand in {".", ".."} or (root / cand).exists():
+                paths.append(cand)
+                if prog in {"gzip", "gunzip", "uncompress"} and cand.lower().endswith((".gz", ".z")):
+                    paths.append(cand.rsplit(".", 1)[0])  # the file it writes next to the archive
+    if prog in ARCHIVE_PROGRAMS or (not paths and prog in RECURSIVE_PROGRAMS):
+        paths.append(".")  # these default to (or may write anywhere in) the current folder, i.e. the whole shared root
+    unclear: GatewayDecision | None = None
     for cand in paths:
         real, rel = resolve_path(root, cand)
         if real is None:
             return block(f"'{cand}' is outside the files this server shares", "hard-rule"), argv
         if not in_scope(role, rel):
             return block(f"'{rel or '/'}' is not in the folders shared with agents; name a folder inside them", "hard-rule"), argv
-        if real.is_dir() and prog in RECURSIVE_PROGRAMS:
-            # a recursive tool on a folder reads everything inside it: every file there must be allowed, nothing denied
-            if dir_contains_denied(rel, role.files.deny) or not covers_whole_dir(rel, role.files.read + role.files.write):
+        if real.is_dir() and prog not in NAME_ONLY_PROGRAMS:
+            # a tool given a folder may reach everything inside it (grep -r, rgrep, diff -r, mv, rm -r): every file there
+            # must be allowed for this kind of access, and nothing denied
+            allowed = role.files.write if mode == "write" else role.files.read + role.files.write
+            if dir_contains_denied(rel, role.files.deny) or not covers_whole_dir(rel, allowed):
                 return block(f"'{prog}' on '{rel or '/'}' would reach files your role can't access; name a folder you fully "
                              f"have access to", rel=rel), argv
             continue
         d = check_path(role, root, cand, mode)
         if d.verdict == "block":
             return d, argv
-        if d.verdict == "supervisor":
-            return supervisor(f"'{prog}' would {mode} '{d.facts.get('rel') or cand}', which no rule covers"), argv
+        if d.verdict == "supervisor" and unclear is None:  # keep checking: a later path may be blocked outright
+            unclear = supervisor(f"'{prog}' would {mode} '{d.facts.get('rel') or cand}', which no rule covers")
+    if unclear is not None:
+        return unclear, argv
     if prog in role.commands.allow:
         return allow(f"'{prog}' is allowed for this role"), argv
     return supervisor(f"'{prog}' is not in this role's command list"), argv
@@ -318,8 +395,10 @@ def run_sql(role: RolePolicy, db_path: str, sql: str, max_rows: int = 200,
         return block("One statement at a time", "hard-rule"), [], []
     denied: list[str] = []
     readable = set(rules.read_tables) | set(rules.write_tables)
-    # names defined by WITH are query-local; the tables their bodies read are still checked one by one
-    ctes = {m.lower() for m in re.findall(r"(?:\bwith\s+(?:recursive\s+)?|,\s*)([A-Za-z_]\w*)\s*(?:\([^)]*\))?\s+as\s*\(", sql, re.I)}
+    # A WITH name can reach the authorizer as a table read (recursive ones do). Names are never taken from the query text
+    # (`WITH secrets AS (…) SELECT * FROM main.secrets` reads the real table): a name the database itself has as a table
+    # or view is always checked; any other name is query-local, and the real tables behind it are checked on their own.
+    real_tables: set[str] = set()
 
     def authorizer(action, arg1, arg2, dbname, source):
         t = (arg1 or "").lower()
@@ -330,7 +409,7 @@ def run_sql(role: RolePolicy, db_path: str, sql: str, max_rows: int = 200,
                     denied.append("the database's full schema")
                     return sqlite3.SQLITE_DENY
                 return sqlite3.SQLITE_OK
-            if t not in readable and (not q or q + t not in readable) and t not in ctes:
+            if t in real_tables and t not in readable and (not q or q + t not in readable):
                 denied.append(f"table '{t}'")
                 return sqlite3.SQLITE_DENY
             col = f"{t}.{(arg2 or '').lower()}"
@@ -356,6 +435,7 @@ def run_sql(role: RolePolicy, db_path: str, sql: str, max_rows: int = 200,
     import time as _time
     deadline = _time.monotonic() + max_seconds
     try:
+        real_tables = {r[0].lower() for r in con.execute("select name from sqlite_master where type in ('table', 'view')")}
         con.set_authorizer(authorizer)
         # a runaway query (e.g. an endless WITH RECURSIVE) is interrupted instead of hanging the server
         con.set_progress_handler(lambda: 1 if _time.monotonic() > deadline else 0, 10_000)

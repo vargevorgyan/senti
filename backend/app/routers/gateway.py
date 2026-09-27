@@ -176,8 +176,11 @@ async def run_tool(ctx: Context, tool: str, arg: str, content: str = "", db_name
         return str(e)
     if tool == "query_db":
         return json.dumps({"columns": resp.get("columns", []), "rows": resp.get("rows", [])}, default=str)
+    # only a call the supervisor itself approved may run on a "supervisor" verdict (see gateway_ops.handle)
+    supervised = (resp.get("decision") or {}).get("verdict") == "supervisor"
     try:
-        out = await runner_call({"op": "exec", "tool": tool, "arg": arg, "content": content, "role": role.model_dump(), **sources})
+        out = await runner_call({"op": "exec", "tool": tool, "arg": arg, "content": content, "role": role.model_dump(),
+                                 "supervised": supervised, **sources})
     except RunnerUnavailable as e:
         return f"Blocked by Senti: {e}"
     if (out.get("decision") or {}).get("verdict") == "block":  # the files changed between check and run

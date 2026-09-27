@@ -160,3 +160,58 @@ def test_with_queries_work_but_still_check_their_tables(db):
     # shadowing a table name with a WITH doesn't unlock the real table: its hidden column still can't be read
     shadow = "with tickets as (select card_number as subject from customers) select subject from tickets"
     assert run_sql(SUPPORT, db, shadow)[0].verdict == "block"
+
+
+def test_a_with_name_never_unlocks_a_real_table(db):
+    # the WITH name matches a forbidden table, and `main.` makes SQLite read the real one
+    assert run_sql(SUPPORT, db, "with orders as (select 1) select * from main.orders")[0].verdict == "block"
+    # names that only look like a WITH (inside a string) don't count either
+    assert run_sql(SUPPORT, db, "select * from orders where 'x, orders as (' <> ''")[0].verdict == "block"
+
+
+@pytest.mark.parametrize("cmd", [
+    "perl5.40.1 -e 'print 1'", "python3.12 -c 'print(1)'", "nawk '{print}' tickets/1.md", "uv run python -c 1",
+    "nice cat payments/cards.csv", "stdbuf -o0 sh -c id", "setsid sh", "chroot . sh", "run-parts tickets",
+    "flock tickets/1.md sh -c id", "ld-linux-x86-64.so.2 /bin/sh", "link payments/cards.csv tickets/notes/c.csv",
+    "debconf-communicate", "split --filter='sh -c id' tickets/1.md", "tar -xf a.tar --to-com=sh", "tar xvF x.sh",
+    "tar -cf out.tar -Iscript tickets", "sort -uo tickets/notes/x tickets/1.md", "sort --files0-from=tickets/1.md",
+    "sdiff --diff-program=sh tickets/1.md tickets/1.md", "find tickets -fprint0 tickets/notes/x",
+])
+def test_code_runners_and_dangerous_flags_are_hard_blocked(root, cmd):
+    d, _ = check_command(SUPPORT, root, cmd)
+    assert d.verdict == "block" and d.layer == "hard-rule", cmd
+
+
+def test_schema_drops_versioned_interpreters():
+    r = RolePolicy.model_validate({"commands": {"allow": ["perl5.40.1", "python3.12", "nice", "uv", "grep"]}})
+    assert r.commands.allow == ["grep"]
+
+
+@pytest.mark.parametrize("cmd", [
+    "rgrep 4111",                                     # recursive grep under another name, implicit current folder
+    "rgrep 4111 .",
+    "diff -r tickets payments",                      # prints the denied files' content
+    "cat -fpayments/cards.csv",                      # a path glued to a short option
+    "mv payments tickets/notes/p",                   # moving a folder would carry denied files to a readable path
+    "rm -r payments",
+    "touch newfile",                                 # a write program's new target outside the write rules
+    "cp tickets/notes/a.md copy.md",
+    "tar -tf tickets/notes/a.tar",                   # archives need the whole shared folder
+])
+def test_commands_cant_reach_past_the_rules(root, cmd):
+    assert check_command(SUPPORT, root, cmd)[0].verdict in {"block", "supervisor"}, cmd
+    assert check_command(SUPPORT, root, cmd)[0].verdict != "allow"
+
+
+def test_writes_outside_the_exposed_folders_are_blocked(root):
+    scoped_role = SUPPORT.model_copy(deep=True)
+    scoped_role.scope = ["tickets"]
+    for cmd in ("touch newfile", "cp tickets/1.md out.md", "tee x"):
+        d, _ = check_command(scoped_role, root, cmd)
+        assert d.verdict == "block" and d.layer == "hard-rule", cmd
+
+
+def test_recursive_tools_still_work_where_the_role_has_full_access(root):
+    assert check_command(SUPPORT, root, "rgrep printer tickets")[0].verdict in {"allow", "supervisor"}
+    assert check_command(SUPPORT, root, "grep -r printer tickets")[0].verdict == "allow"
+    assert check_command(SUPPORT, root, "wc -l tickets/1.md")[0].verdict == "allow"
