@@ -47,6 +47,12 @@ Legend: [x] done · [~] partial · [ ] todo
 - [x] Self-protection (Senti home, agent hook configs, launchctl/pkill Senti)
 - [x] "Ask" handling: Claude native prompt; macOS dialog for Codex/OpenCode (Always allow → allowlist); owner/admin approvals via backend
 
+### More agents (2026-09-27)
+- [x] Agent registry (`agents.py`); adapters + installers + fail-closed hook replies for Cursor, Cline, Antigravity, ZCode, Hermes Agent, OpenClaw (`tests/test_more_agents.py`)
+- [ ] Live tests with the real agents (only Antigravity is installed here; needs the owner's OK because it uses their Google account)
+- [ ] Enforce peer verification for these agents once their process names are confirmed live
+- [ ] Antigravity: task context (no prompt event; could read `transcriptPath`)
+
 ### Org backend (Docker) — `backend/`
 - [x] FastAPI + SQLite models: admins, roles, users, profiles, devices, enrollment codes, events, approvals, KV, change log
 - [x] Admin auth (JWT, random secret per install), seed admin + Developer / PM / Autonomous agent profiles + demo code
@@ -106,3 +112,4 @@ cd admin && npx playwright test
 - 2026-09-27: Security review fixes (runner/awk/git/symlink/glob/curl bypasses, socket token, override narrowing, bundle binding, backend spoofing, default-password warning). Claude Code built-in sandbox via `install --sandbox`; `network.ask` rules.
 - 2026-09-27: Remaining items done — JWT revocation/SSE tickets, TLS + pinning, peer-process verification, required sandbox, secret brokering, model gateway; second review (15+ findings) fixed. Engine 161 tests, backend 22, Playwright 7, e2e 14/14.
 - 2026-09-27: Review leftovers fixed (see security review, third pass). Engine 175 tests, backend 24, Playwright 7, e2e 14/14.
+- 2026-09-27: Six more agents (Cursor, Cline, Antigravity, ZCode, Hermes, OpenClaw): adapters, installers, docs; unit-tested, not live-tested. Engine 196 tests.

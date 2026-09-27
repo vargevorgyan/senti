@@ -35,6 +35,17 @@ For local-model specifics see [Local models](/integrations/local-models.md).
 | **Codex CLI** | ChatGPT / OpenAI | `PreToolUse`/`UserPromptSubmit`/`PostToolUse` in `.codex/hooks.json`; ask via macOS dialog | done, tested live (2026-09-27) | [Codex CLI](/integrations/codex-cli.md) |
 | **OpenCode** | **local models** (Ollama, LM Studio, OpenAI-compatible) | TypeScript plugin (`tool.execute.before/after`, `chat.message`); ask via macOS dialog | done, tested live with Ollama (2026-09-27) | [OpenCode](/integrations/opencode.md) |
 
+# Added 2026-09-27 (implemented, unit-tested, not yet live-tested)
+
+| Agent | Mechanism | Ask | Concept |
+|---|---|---|---|
+| **Cursor** | `hooks.json` permission hooks, `failClosed` | native for shell/MCP, dialog otherwise | [Cursor](/integrations/cursor.md) |
+| **Cline** | executable hook files (VS Code + CLI payloads) | macOS dialog | [Cline](/integrations/cline.md) |
+| **Antigravity** | `~/.gemini/config/hooks.json` PreToolUse | native | [Antigravity](/integrations/antigravity.md) |
+| **ZCode** | Claude-compatible hooks in `~/.zcode/cli/config.json` | native | [ZCode](/integrations/zcode.md) |
+| **Hermes Agent** | `pre_tool_call` shell hooks, `fail_closed` | Hermes approval gate | [Hermes](/integrations/hermes.md) |
+| **OpenClaw** | TypeScript plugin, `before_tool_call` | `requireApproval` | [OpenClaw](/integrations/openclaw.md) |
+
 # Other agents with blocking hooks (per HOL Guard's matrix)[^hol-matrix]
 
 Cursor (`beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution`, `preToolUse` in `.cursor/hooks.json`),

@@ -40,6 +40,7 @@ sources:
 | `audit.py` | Hash-chained append-only JSONL log with upload offsets |
 | `honeytokens.py`, `undo.py`, `supply_chain.py`, `injection.py`, `notify.py`, `sandbox.py`, `patch.py` | Decoys, APFS-clone snapshots, package check, post-read injection scan, macOS notification/dialog, srt settings, apply_patch parser |
 | `installers.py`, `cli.py` | Hook installers (with backups) and the `senti` command |
+| `agents.py` | Registry of supported agents (name, native ask, process markers, sandbox hosts) |
 | `identity.py` | Peer PID from the socket, parent chain, agent verification, sandbox detection |
 | `secrets.py`, `secret_exec.py` | Secret brokering: Keychain store, grants, the execution wrapper with output masking |
 | `gateway.py` | OpenAI-compatible model gateway for DIY agents (127.0.0.1:11435) |
@@ -61,7 +62,7 @@ uv run senti install all               # or --project DIR for one repo
 # Tests
 
 ```bash
-cd engine && uv run pytest -q          # 175 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
+cd engine && uv run pytest -q          # 196 tests: rules, two review regression suites, profiles, judge modes, identity, secrets, gateway
 cd backend && uv run pytest -q         # 24 API tests
 cd admin && npx playwright test        # 7 browser tests against the running stack
 SENTI_SOCKET=... uv run --project engine python scripts/e2e_modes.py   # 14 live checks

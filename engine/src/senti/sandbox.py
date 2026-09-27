@@ -19,9 +19,9 @@ BASE_DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gcloud", "~/.kube",
 BASE_DOMAINS = ["github.com", "*.github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com",
                 "objects.githubusercontent.com", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org", "*.npmjs.org",
                 "crates.io", "static.crates.io", "proxy.golang.org"]
-AGENT_DOMAINS = {"claude": ["api.anthropic.com", "statsig.anthropic.com", "*.anthropic.com", "claude.ai"],
-                 "codex": ["api.openai.com", "chatgpt.com", "*.openai.com", "*.chatgpt.com", "auth.openai.com"],
-                 "opencode": ["opencode.ai", "*.opencode.ai", "models.dev", "localhost"]}
+from .agents import AGENTS as _AGENTS
+
+AGENT_DOMAINS = {a.id: list(a.domains) for a in _AGENTS.values()}
 
 
 def srt_settings(profile: dict, agent: str, project: str) -> dict:

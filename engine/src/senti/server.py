@@ -24,7 +24,7 @@ from . import adapters, undo
 from .config import Settings, ensure_dirs, hook_token, socket_path
 from .engine import Engine
 
-AGENTS = {"claude", "codex", "opencode", "generic"}
+from .agents import AGENTS  # noqa: E402
 
 
 def create_app(engine: Engine) -> FastAPI:

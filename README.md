@@ -16,7 +16,7 @@ Organizations add a backend and an admin panel that push role-based profiles to 
 ## Architecture
 
 ```
-Claude Code · Codex CLI · OpenCode
+Claude Code · Codex · OpenCode · Cursor · Cline · Antigravity · ZCode · Hermes · OpenClaw
         │  hooks / plugin (senti-hook, fail closed)
         ▼
 Senti engine (per Mac, FastAPI on ~/.senti/senti.sock)          ┌── Organization (docker compose) ──────────┐
@@ -75,7 +75,7 @@ Hard rules and profile denies are enforced locally and can never be overruled by
 
 ```
 senti start|stop|status            run the engine
-senti install|uninstall <agent>    claude | codex | opencode | all  [--project DIR]
+senti install|uninstall <agent>    claude codex opencode cursor cline antigravity zcode hermes openclaw | all  [--project DIR]
 senti enroll / unenroll            join or leave an organization
 senti log [-f]                     recent decisions
 senti audit verify                 check the tamper-evident audit log

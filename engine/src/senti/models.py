@@ -26,6 +26,7 @@ class Action:
     prompt: str = ""
     response: Any = None  # tool output for post_tool events
     identity: dict | None = None  # peer-process verification result (see identity.py)
+    native_ask: bool | None = None  # per-event override: can the agent ask the person itself for THIS event?
 
 
 @dataclass

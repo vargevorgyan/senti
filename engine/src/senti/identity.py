@@ -14,7 +14,11 @@ import struct
 import sys
 from pathlib import Path
 
-AGENT_MARKERS = {"claude": ("claude",), "codex": ("codex",), "opencode": ("opencode",)}
+from .agents import AGENTS
+
+
+def _markers() -> dict[str, tuple[str, ...]]:
+    return {a.id: a.markers for a in AGENTS.values() if a.markers}
 SOL_LOCAL, LOCAL_PEERPID = 0, 0x002
 
 
@@ -76,7 +80,7 @@ def agents_in(chain: list[dict]) -> set[str]:
     found = set()
     for proc in chain:
         words = _words(proc)
-        for agent, marks in AGENT_MARKERS.items():
+        for agent, marks in _markers().items():
             if any(m == w or w.startswith(m + "-") or w.startswith(m + ".") for m in marks for w in words):
                 found.add(agent)
     return found
@@ -124,7 +128,8 @@ def sandbox_status(agent: str, chain: list[dict], cwd: str) -> bool | None:
 def identify(agent: str, pid: int | None, cwd: str) -> dict:
     chain = ancestry(pid)
     found = agents_in(chain)
-    verified = None if not chain else (agent in found if agent in AGENT_MARKERS else True)
+    known = _markers()
+    verified = None if not chain else (agent in found if agent in known else True)
     return {"pid": pid, "verified": verified, "agents_in_chain": sorted(found),
             "chain": [p.get("name") for p in chain[:8]],
-            "sandboxed": sandbox_status(agent, chain, cwd) if agent in AGENT_MARKERS else None}
+            "sandboxed": sandbox_status(agent, chain, cwd) if agent in known else None}

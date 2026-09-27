@@ -36,7 +36,7 @@ Adapters for Claude Code, Codex CLI, OpenCode; generic API and model gateway for
 
 # Limits
 
-Cursor, Copilot CLI and Gemini CLI have blocking hooks but no Senti adapter yet; agents that run in a vendor's cloud (ChatGPT agent mode) can't be intercepted locally.
+Cursor, Cline, Antigravity, ZCode, Hermes and OpenClaw now have adapters but are not yet live-tested; Copilot CLI and Gemini CLI have none yet; agents that run in a vendor's cloud (ChatGPT agent mode) can't be intercepted locally.
 
 # Related
 

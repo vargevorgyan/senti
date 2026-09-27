@@ -20,15 +20,28 @@ def main() -> None:
 
     def fail(why: str):
         if event != "pre":
+            fallback = {"cursor": {"continue": True} if event == "prompt" else {}, "cline": {"cancel": False}, "hermes": {}, "antigravity": {}}
+            if agent in fallback:
+                print(json.dumps(fallback[agent]))
             sys.exit(0)
         reason = f"Senti: I couldn't check this action ({why}), so I'm not letting it run without you."
-        if agent in {"opencode", "generic"}:
-            print(json.dumps({"verdict": "block", "reason": reason}))
+        code = 0
+        if agent in {"opencode", "openclaw", "generic"}:
+            out = {"verdict": "block", "reason": reason}
+        elif agent == "cursor":
+            out, code = {"permission": "deny", "user_message": reason, "agent_message": reason}, 2
+        elif agent == "cline":
+            out = {"cancel": True, "errorMessage": reason}
+        elif agent == "hermes":
+            out, code = {"decision": "block", "reason": reason}, 2
+        elif agent == "antigravity":
+            out = {"decision": "deny", "reason": reason}
         else:
-            perm = "deny" if agent == "codex" else "ask"
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": perm,
-                                                     "permissionDecisionReason": reason}}))
-        sys.exit(0)
+            perm = "deny" if agent in {"codex", "zcode"} else "ask"
+            out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": perm, "permissionDecisionReason": reason}}
+            code = 2 if agent == "zcode" else 0
+        print(json.dumps(out))
+        sys.exit(code)
 
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -46,7 +59,7 @@ def main() -> None:
         fail("engine error")
     if not body.strip():
         if event == "pre" and agent != "codex":
-            fail("empty reply")
+            fail("empty reply")  # every agent but Codex needs an explicit answer
         sys.exit(0)
     sys.stdout.write(body.decode(errors="replace") + "\n")
 

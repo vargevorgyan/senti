@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -10,8 +11,23 @@ from pathlib import Path
 
 from .config import senti_home
 
-HOME = Path.home()
 MARK = "senti-hook"
+
+
+def _home() -> Path:
+    return Path(os.environ.get("HOME") or Path.home())
+
+
+class _HomeProxy(os.PathLike):
+    """`HOME / "x"` evaluated lazily, so tests (and sudo-less installs) can point HOME elsewhere."""
+    def __truediv__(self, other):
+        return _home() / other
+
+    def __fspath__(self):
+        return str(_home())
+
+
+HOME = _HomeProxy()
 
 
 def hook_binary() -> Path:
@@ -147,7 +163,243 @@ INSTALL = {"claude": install_claude, "codex": install_codex, "opencode": install
 UNINSTALL = {"claude": uninstall_claude, "codex": uninstall_codex, "opencode": uninstall_opencode}
 
 
-LAUNCH_AGENT = HOME / "Library" / "LaunchAgents" / "am.tumo.senti.plist"
+# ---------------------------------------------------------------- agents added 2026-09-27
+def _load_json(p: Path) -> dict:
+    return json.loads(p.read_text()) if p.exists() and p.read_text().strip() else {}
+
+
+def _write_json(p: Path, data: dict) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _backup(p)
+    p.write_text(json.dumps(data, indent=2))
+
+
+def _no_project(agent: str, project: str | None) -> None:
+    if project:
+        raise ValueError(f"{agent} only reads user-level hook settings; install without --project")
+
+
+# Cursor: ~/.cursor/hooks.json or <project>/.cursor/hooks.json  (version 1, failClosed so crashes/timeouts deny)
+CURSOR_EVENTS = {"beforeShellExecution": "pre", "beforeMCPExecution": "pre", "beforeReadFile": "pre", "preToolUse": "pre",
+                 "beforeSubmitPrompt": "prompt", "postToolUse": "post", "afterShellExecution": "post", "afterFileEdit": "post"}
+
+
+def cursor_hooks_path(project: str | None) -> Path:
+    return (Path(project) if project else HOME) / ".cursor" / "hooks.json"
+
+
+def install_cursor(project: str | None = None) -> Path:
+    p = cursor_hooks_path(project)
+    cfg = _load_json(p)
+    cfg["version"] = cfg.get("version", 1)
+    hooks = cfg.setdefault("hooks", {})
+    for ev, kind in CURSOR_EVENTS.items():
+        entry = {"command": _cmd("cursor", kind), "timeout": 600 if kind == "pre" else 30}
+        if kind != "post":
+            entry["failClosed"] = True
+        hooks[ev] = [entry] + [e for e in hooks.get(ev, []) if MARK not in e.get("command", "")]
+    _write_json(p, cfg)
+    return p
+
+
+def uninstall_cursor(project: str | None = None) -> Path:
+    p = cursor_hooks_path(project)
+    if p.exists():
+        cfg = _load_json(p)
+        for ev in list((cfg.get("hooks") or {})):
+            cfg["hooks"][ev] = [e for e in cfg["hooks"][ev] if MARK not in e.get("command", "")]
+            if not cfg["hooks"][ev]:
+                del cfg["hooks"][ev]
+        _write_json(p, cfg)
+    return p
+
+
+# Cline: one executable per event in ~/Documents/Cline/Hooks/ (or <project>/.clinerules/hooks/)
+CLINE_EVENTS = {"PreToolUse": "pre", "UserPromptSubmit": "prompt", "PostToolUse": "post"}
+
+
+def cline_hooks_dir(project: str | None) -> Path:
+    return Path(project) / ".clinerules" / "hooks" if project else HOME / "Documents" / "Cline" / "Hooks"
+
+
+def install_cline(project: str | None = None) -> Path:
+    d = cline_hooks_dir(project)
+    d.mkdir(parents=True, exist_ok=True)
+    skipped = []
+    for ev, kind in CLINE_EVENTS.items():
+        f = d / ev
+        if f.exists() and MARK not in f.read_text(errors="replace"):
+            skipped.append(ev)  # never overwrite a person's own hook
+            continue
+        f.write_text(f"#!/bin/sh\n# Installed by Senti (senti install cline). Remove with: senti uninstall cline\nexec {hook_binary()} cline {kind}\n")
+        f.chmod(0o755)
+    if skipped:
+        print(f"  cline: kept your existing hooks {', '.join(skipped)} in {d}; Senti is NOT active for those events")
+    return d
+
+
+def uninstall_cline(project: str | None = None) -> Path:
+    d = cline_hooks_dir(project)
+    for ev in CLINE_EVENTS:
+        f = d / ev
+        if f.exists() and MARK in f.read_text(errors="replace"):
+            f.unlink()
+    return d
+
+
+# Antigravity: ~/.gemini/config/hooks.json (global, IDE + agy CLI) or <project>/.agents/hooks.json; one named hook "senti"
+def antigravity_hooks_path(project: str | None) -> Path:
+    return Path(project) / ".agents" / "hooks.json" if project else HOME / ".gemini" / "config" / "hooks.json"
+
+
+def install_antigravity(project: str | None = None) -> Path:
+    p = antigravity_hooks_path(project)
+    cfg = _load_json(p)
+    cfg["senti"] = {
+        "enabled": True,
+        "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": _cmd("antigravity", "pre"), "timeout": 600}]}],
+        "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": _cmd("antigravity", "post"), "timeout": 30}]}],
+    }
+    _write_json(p, cfg)
+    return p
+
+
+def uninstall_antigravity(project: str | None = None) -> Path:
+    p = antigravity_hooks_path(project)
+    if p.exists():
+        cfg = _load_json(p)
+        cfg.pop("senti", None)
+        _write_json(p, cfg)
+    return p
+
+
+# ZCode: ~/.zcode/cli/config.json, nested hooks.events layout (project-level hooks are ignored by ZCode)
+def zcode_config_path() -> Path:
+    return HOME / ".zcode" / "cli" / "config.json"
+
+
+def install_zcode(project: str | None = None) -> Path:
+    _no_project("ZCode", project)
+    p = zcode_config_path()
+    cfg = _load_json(p)
+    hooks = cfg.setdefault("hooks", {})
+    hooks["enabled"] = True
+    events = hooks.setdefault("events", {})
+    for ev, kind, matcher in (("PreToolUse", "pre", "*"), ("UserPromptSubmit", "prompt", ""), ("PostToolUse", "post", "*")):
+        entry = {"matcher": matcher, "hooks": [{"type": "command", "command": str(hook_binary()), "args": ["zcode", kind],
+                                                "timeoutMs": 600000 if kind == "pre" else 30000}]}
+        events[ev] = [entry] + [e for e in events.get(ev, []) if not any(MARK in h.get("command", "") for h in e.get("hooks", []))]
+    _write_json(p, cfg)
+    return p
+
+
+def uninstall_zcode(project: str | None = None) -> Path:
+    p = zcode_config_path()
+    if p.exists():
+        cfg = _load_json(p)
+        events = (cfg.get("hooks") or {}).get("events") or {}
+        for ev in list(events):
+            events[ev] = [e for e in events[ev] if not any(MARK in h.get("command", "") for h in e.get("hooks", []))]
+            if not events[ev]:
+                del events[ev]
+        _write_json(p, cfg)
+    return p
+
+
+# Hermes Agent: shell hooks in ~/.hermes/config.yaml (fail_closed), consent pre-seeded in shell-hooks-allowlist.json
+def hermes_home() -> Path:
+    return Path(os.environ.get("HERMES_HOME") or HOME / ".hermes")
+
+
+def install_hermes(project: str | None = None) -> Path:
+    import yaml
+    _no_project("Hermes", project)
+    p = hermes_home() / "config.yaml"
+    cfg = (yaml.safe_load(p.read_text()) if p.exists() else None) or {}
+    hooks = cfg.setdefault("hooks", {}) or {}
+    cfg["hooks"] = hooks
+    for ev, kind in (("pre_tool_call", "pre"), ("post_tool_call", "post")):
+        entry = {"id": f"senti-{kind}", "matcher": ".*", "command": _cmd("hermes", kind), "timeout": 300 if kind == "pre" else 30}
+        if kind == "pre":
+            entry["fail_closed"] = True
+        hooks[ev] = [entry] + [e for e in (hooks.get(ev) or []) if MARK not in str(e.get("command", ""))]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _backup(p)
+    p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    # Hermes asks once per (event, command); running `senti install hermes` is that consent
+    allow = hermes_home() / "shell-hooks-allowlist.json"
+    data = _load_json(allow) or {"approvals": []}
+    for ev, kind in (("pre_tool_call", "pre"), ("post_tool_call", "post")):
+        item = {"event": ev, "command": _cmd("hermes", kind)}
+        if item not in data["approvals"]:
+            data["approvals"].append(item)
+    _write_json(allow, data)
+    return p
+
+
+def uninstall_hermes(project: str | None = None) -> Path:
+    import yaml
+    p = hermes_home() / "config.yaml"
+    if p.exists():
+        cfg = yaml.safe_load(p.read_text()) or {}
+        for ev in list((cfg.get("hooks") or {})):
+            cfg["hooks"][ev] = [e for e in cfg["hooks"][ev] or [] if MARK not in str(e.get("command", ""))]
+            if not cfg["hooks"][ev]:
+                del cfg["hooks"][ev]
+        _backup(p)
+        p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    allow = hermes_home() / "shell-hooks-allowlist.json"
+    if allow.exists():
+        data = _load_json(allow)
+        data["approvals"] = [a for a in data.get("approvals", []) if MARK not in a.get("command", "")]
+        _write_json(allow, data)
+    return p
+
+
+# OpenClaw: a native plugin (before_tool_call) in ~/.openclaw/plugins/senti, linked with OpenClaw's own CLI
+def openclaw_plugin_dir() -> Path:
+    return Path(os.environ.get("OPENCLAW_STATE_DIR") or HOME / ".openclaw") / "plugins" / "senti"
+
+
+def install_openclaw(project: str | None = None) -> Path:
+    _no_project("OpenClaw", project)
+    d = openclaw_plugin_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    src = resources.files("senti.data").joinpath("openclaw-senti.ts").read_text()
+    (d / "index.ts").write_text(src.replace("__SENTI_HOOK__", str(hook_binary())))
+    (d / "package.json").write_text(json.dumps({"name": "senti-openclaw", "version": "0.2.0", "type": "module",
+                                                "openclaw": {"extensions": ["./index.ts"]}}, indent=2))
+    (d / "openclaw.plugin.json").write_text(json.dumps({"id": "senti", "name": "Senti",
+                                                        "description": "Checks every tool call with the local Senti engine",
+                                                        "activation": {"onStartup": True},
+                                                        "configSchema": {"type": "object", "additionalProperties": False}}, indent=2))
+    exe = shutil.which("openclaw")
+    if exe:
+        subprocess.run([exe, "plugins", "install", "--link", str(d), "--force"], check=False)
+        subprocess.run([exe, "plugins", "enable", "senti"], check=False)
+    else:
+        print(f"  openclaw: plugin written to {d}. Activate it with:\n"
+              f"    openclaw plugins install --link {d} --force && openclaw plugins enable senti")
+    return d
+
+
+def uninstall_openclaw(project: str | None = None) -> Path:
+    d = openclaw_plugin_dir()
+    exe = shutil.which("openclaw")
+    if exe:
+        subprocess.run([exe, "plugins", "disable", "senti"], check=False)
+    if d.exists():
+        shutil.rmtree(d)
+    return d
+
+
+INSTALL.update({"cursor": install_cursor, "cline": install_cline, "antigravity": install_antigravity, "zcode": install_zcode,
+                "hermes": install_hermes, "openclaw": install_openclaw})
+UNINSTALL.update({"cursor": uninstall_cursor, "cline": uninstall_cline, "antigravity": uninstall_antigravity,
+                  "zcode": uninstall_zcode, "hermes": uninstall_hermes, "openclaw": uninstall_openclaw})
+
+
+LAUNCH_AGENT = Path.home() / "Library" / "LaunchAgents" / "am.tumo.senti.plist"
 
 
 def install_service(senti_exe: str) -> Path:

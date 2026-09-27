@@ -92,8 +92,12 @@ def cmd_install(a) -> int:
     if not hb.exists() or a.rebuild:
         print("Building the hook client ...")
         installers.build_hook()
-    agents = ["claude", "codex", "opencode"] if a.agent == "all" else [a.agent]
+    from .agents import hook_agents
+    agents = hook_agents() if a.agent == "all" else [a.agent]
     for ag in agents:
+        if a.project and ag in {"zcode", "hermes", "openclaw"}:
+            print(f"  {ag:11s} skipped: it only reads user-level settings (install without --project)")
+            continue
         if ag == "claude" and a.sandbox:
             from . import sandbox as sbx
             from .rules import project_root
@@ -102,7 +106,7 @@ def cmd_install(a) -> int:
             print(f"  {ag:9s} → {p} (with Claude Code's built-in Bash sandbox from the active profile)")
             continue
         p = installers.INSTALL[ag](a.project)
-        print(f"  {ag:9s} → {p}")
+        print(f"  {ag:11s} → {p}")
     if a.sandbox:
         print("  sandbox: Codex runs commands in its own sandbox (use -s workspace-write); for OpenCode add "
               '`eval "$(senti shell-init)"` to your shell profile so it starts inside Senti\'s sandbox.')
@@ -116,9 +120,12 @@ def cmd_install(a) -> int:
 
 def cmd_uninstall(a) -> int:
     from . import installers
-    agents = ["claude", "codex", "opencode"] if a.agent == "all" else [a.agent]
+    from .agents import hook_agents
+    agents = hook_agents() if a.agent == "all" else [a.agent]
     for ag in agents:
-        print(f"  {ag:9s} ✕ {installers.UNINSTALL[ag](a.project)}")
+        if a.project and ag in {"zcode", "hermes", "openclaw"}:
+            continue
+        print(f"  {ag:11s} ✕ {installers.UNINSTALL[ag](a.project)}")
     return 0
 
 
@@ -306,7 +313,8 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_status)
     for name, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
         s = sub.add_parser(name, help=f"{name} hooks for an agent")
-        s.add_argument("agent", choices=["claude", "codex", "opencode", "all"])
+        s.add_argument("agent", choices=["claude", "codex", "opencode", "cursor", "cline", "antigravity", "zcode", "hermes",
+                                          "openclaw", "all"])
         s.add_argument("--project", help="install into a project instead of user-wide")
         if name == "install":
             s.add_argument("--rebuild", action="store_true", help="recompile the hook client")

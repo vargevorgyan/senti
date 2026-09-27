@@ -1,6 +1,7 @@
 // senti-hook: the tiny program an agent runs for every action.
 //
-//   senti-hook <agent> [pre|prompt|post]      agent = claude | codex | opencode | generic
+//   senti-hook <agent> [pre|prompt|post]
+//   agent = claude | codex | opencode | cursor | cline | antigravity | zcode | hermes | openclaw | generic
 //
 // Reads the agent's hook JSON from stdin, sends it to the local Senti engine over a Unix socket
 // (HTTP/1.1, POST /v1/hook/<agent>), and prints the engine's reply for the agent.
@@ -44,14 +45,35 @@ func writeErr(_ s: String) {
 func failClosed(_ why: String) -> Never {
     let reason = "Senti: I couldn't check this action (\(why)), so I'm not letting it run without you."
     if event != "pre" {
-        // prompt / post-tool events carry no permission decision; never block the user's prompt
+        // prompt / post-tool events carry no permission decision; never block the user's prompt,
+        // but answer in the shape agents that validate output expect
+        switch agent {
+        case "cursor": print(event == "prompt" ? "{\"continue\":true}" : "{}")
+        case "cline": print("{\"cancel\":false}")
+        case "hermes", "antigravity": print("{}")
+        default: break
+        }
         exit(0)
     }
     switch agent {
     case "codex":
         print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"\(reason)\"}}")
-    case "opencode", "generic":
+    case "opencode", "openclaw", "generic":
         print("{\"verdict\":\"block\",\"reason\":\"\(reason)\",\"layer\":\"hook\"}")
+    case "cursor":
+        print("{\"permission\":\"deny\",\"user_message\":\"\(reason)\",\"agent_message\":\"\(reason)\"}")
+        exit(2)  // Cursor: exit 2 = deny even if the JSON were ignored
+    case "cline":
+        print("{\"cancel\":true,\"errorMessage\":\"\(reason)\"}")
+    case "hermes":
+        print("{\"decision\":\"block\",\"reason\":\"\(reason)\"}")
+        exit(2)
+    case "antigravity":
+        print("{\"decision\":\"deny\",\"reason\":\"\(reason)\"}")
+    case "zcode":
+        // ZCode fails open on hook errors: an explicit deny (not ask) plus exit 2
+        print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"\(reason)\"}}")
+        exit(2)
     default:
         print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"\(reason)\"}}")
     }
@@ -113,7 +135,7 @@ let head = String(decoding: reply[0..<split], as: UTF8.self)
 if !head.hasPrefix("HTTP/1.1 200") && !head.hasPrefix("HTTP/1.0 200") { failClosed("engine error") }
 let body = Array(reply[(split + 4)...])
 if body.isEmpty {
-    if event == "pre" && (agent == "claude" || agent == "opencode" || agent == "generic") { failClosed("empty reply") }
+    if event == "pre" && agent != "codex" { failClosed("empty reply") }
     exit(0)  // Codex: empty output = no objection; prompt/post: nothing to add
 }
 let out = String(decoding: body, as: UTF8.self)

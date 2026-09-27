@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AGENTS, api, type Profile, type Role, type User } from '../api'
+import { Fragment, useState } from 'react'
+import { AGENTS, agentName, api, type Profile, type Role, type User } from '../api'
 import { Icon, useLoad, useToast } from '../components/ui'
 
 export default function People() {
@@ -9,6 +9,12 @@ export default function People() {
   const toast = useToast()
   const [nu, setNu] = useState({ email: '', role_id: 'engineering' })
   const [nr, setNr] = useState('')
+  const [open, setOpen] = useState<number | null>(null)
+  const profileName = (id: string) => profiles?.find(p => p.id === id)?.name ?? id
+  const summary = (u: User) => {
+    const o = Object.entries(u.agent_profiles ?? {}).filter(([, v]) => v)
+    return o.length ? o.map(([a, pid]) => `${agentName(a)} → ${profileName(pid)}`).join(', ') : 'Every agent uses the role’s profile'
+  }
 
   const saveUser = async (u: User, patch: Partial<User>) => {
     try {
@@ -38,23 +44,36 @@ export default function People() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Person</th><th>Role</th>{AGENTS.map(a => <th key={a.id}>{a.name}</th>)}<th>Macs</th><th /></tr></thead>
+          <thead><tr><th>Person</th><th>Role</th><th>Agent profiles</th><th>Macs</th><th /></tr></thead>
           <tbody>
-            {(users.data ?? []).length === 0 && <tr><td colSpan={7}><div className="empty">No people yet. They appear here when they enroll a Mac, or add them below.</div></td></tr>}
+            {(users.data ?? []).length === 0 && <tr><td colSpan={5}><div className="empty">No people yet. They appear here when they enroll a Mac, or add them below.</div></td></tr>}
             {(users.data ?? []).map(u => (
-              <tr key={u.id}>
-                <td><b>{u.name || u.email}</b><br /><span className="small muted">{u.email}</span></td>
-                <td><select aria-label={`Role for ${u.email}`} value={u.role_id} onChange={e => saveUser(u, { role_id: e.target.value })}>{(roles.data ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
-                {AGENTS.map(a => (
-                  <td key={a.id}>
-                    <select aria-label={`${a.name} profile for ${u.email}`} value={u.agent_profiles[a.id] ?? ''} onChange={e => saveUser(u, { agent_profiles: { ...u.agent_profiles, [a.id]: e.target.value } })}>
-                      <option value="">From role</option>{(profiles ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+              <Fragment key={u.id}>
+                <tr>
+                  <td><b>{u.name || u.email}</b><br /><span className="small muted">{u.email}</span></td>
+                  <td style={{ minWidth: 170 }}><select aria-label={`Role for ${u.email}`} value={u.role_id} onChange={e => saveUser(u, { role_id: e.target.value })}>{(roles.data ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
+                  <td className="small" style={{ maxWidth: 420 }}>{summary(u)}</td>
+                  <td><span className={`dot${u.online ? ' on' : ''}`} /> {u.devices}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn sm" onClick={() => setOpen(open === u.id ? null : u.id)} aria-expanded={open === u.id}>{open === u.id ? 'Done' : 'Edit agents'}</button>
+                    <button className="btn ghost sm" onClick={() => removeUser(u)}>Remove</button>
                   </td>
-                ))}
-                <td><span className={`dot${u.online ? ' on' : ''}`} /> {u.devices}</td>
-                <td><button className="btn ghost sm" onClick={() => removeUser(u)}>Remove</button></td>
-              </tr>
+                </tr>
+                {open === u.id && (
+                  <tr className="expanded"><td colSpan={5}>
+                    <p className="small muted" style={{ marginBottom: 12 }}>Pick a different profile for one of {u.name || u.email}’s agents. “From role” keeps the role’s profile.</p>
+                    <div className="grid3">
+                      {AGENTS.map(a => (
+                        <label className="field" key={a.id}><span>{a.name}</span>
+                          <select value={u.agent_profiles[a.id] ?? ''} onChange={e => saveUser(u, { agent_profiles: { ...u.agent_profiles, [a.id]: e.target.value } })}>
+                            <option value="">From role</option>{(profiles ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                  </td></tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

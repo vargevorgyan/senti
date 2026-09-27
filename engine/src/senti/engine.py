@@ -29,7 +29,7 @@ from .rules import (CODE_EXT, check_action, classify_path, expand, find_secrets,
                     read_script, redact, scan_code, short)
 from .supply_chain import check_package
 
-NATIVE_ASK = {"claude": True, "codex": False, "opencode": False, "generic": True, "gateway": False}
+from .agents import AGENTS as AGENT_SPECS  # noqa: E402
 
 
 class Engine:
@@ -158,6 +158,15 @@ class Engine:
 
     # ------------------------------------------------------------------ the cascade
     async def decide(self, a: Action) -> Decision:
+        if a.tool == "__multi__":
+            subs = a.input.get("actions") or []
+            ds = [await self.decide(Action(a.agent, t, i, a.cwd, a.session_id, raw_tool=a.raw_tool)) for t, i in subs]
+            worst = strictest(*ds) if ds else None
+            if worst is None:
+                return Decision("ask", "The agent sent an empty batch of actions", "fallback", "empty_request", severity="warning")
+            return worst
+        if a.input.get("__covered__"):
+            return Decision("allow", f"Checked by the dedicated {a.input['__covered__']} hook", "L1-rules", "covered_elsewhere")
         if a.tool in {"apply_patch", "patch"}:
             text = a.input.get("command") or a.input.get("patchText") or a.input.get("patch") or a.input.get("input") or ""
             subs = patch_to_actions(text)
@@ -405,10 +414,11 @@ class Engine:
     # ------------------------------------------------------------------ identity / sandbox requirements
     def _enforce_identity_and_sandbox(self, a: Action, d: Decision) -> Decision:
         ident = a.identity or {}
-        if d.verdict != "allow" or a.agent not in {"claude", "codex", "opencode"}:
+        spec = AGENT_SPECS.get(a.agent)
+        if d.verdict != "allow" or spec is None or not spec.hook_based:
             return d
-        name = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}[a.agent]
-        if ident.get("verified") is False and self.settings.agent_identity == "enforce":
+        name = spec.name
+        if ident.get("verified") is False and self.settings.agent_identity == "enforce" and spec.verify_identity:
             return Decision("ask", f"I couldn't confirm this request really comes from {name} (the calling program is "
                                    f"{' < '.join(ident.get('chain', [])[:3]) or 'unknown'})", "L0-identity", "unverified_agent",
                             severity="warning", meta={"identity": ident})
@@ -432,12 +442,13 @@ class Engine:
                           (f"Approved by {who}: " if verdict == "allow" else f"Not approved ({who}): ") + d.reason,
                           "approval-" + goes_to, d.rule, d.p, d.severity, {**d.meta, "approval": who})
             return nd
-        if NATIVE_ASK.get(a.agent, True):
+        native = a.native_ask if a.native_ask is not None else (AGENT_SPECS[a.agent].native_ask if a.agent in AGENT_SPECS else True)
+        if native:
             return d
         detail = str(a.input.get("command") or a.input.get("file_path") or a.input.get("url") or json.dumps(a.input))
         if len(detail) > 500:  # show the start AND the end: the dangerous part is often at the tail
             detail = detail[:240] + "\n…\n" + detail[-240:]
-        verdict, how = await notify.ask_dialog(a.agent.capitalize(), d.reason, detail,
+        verdict, how = await notify.ask_dialog(AGENT_SPECS[a.agent].name if a.agent in AGENT_SPECS else a.agent, d.reason, detail,
                                                timeout=min(self.settings.approval_timeout_s, 600))
         if verdict == "allow":
             if how == "always":

@@ -76,6 +76,12 @@ export const AGENTS = [
   { id: 'claude', name: 'Claude Code' },
   { id: 'codex', name: 'Codex' },
   { id: 'opencode', name: 'OpenCode' },
+  { id: 'cursor', name: 'Cursor' },
+  { id: 'cline', name: 'Cline' },
+  { id: 'antigravity', name: 'Antigravity' },
+  { id: 'zcode', name: 'ZCode' },
+  { id: 'hermes', name: 'Hermes' },
+  { id: 'openclaw', name: 'OpenClaw' },
 ]
 export const agentName = (id: string) => AGENTS.find(a => a.id === id)?.name ?? (id === 'generic' ? 'Other agents' : id || 'Agent')
 
