@@ -23,7 +23,7 @@ The analytics agent can query the orders and customers tables but not emails or 
 
 function List({ label, items }: { label: string; items: string[] }) {
   if (!items.length) return null
-  return <div className="small"><b>{label}:</b> {items.map(i => <code key={i} style={{ marginRight: 6 }}>{i}</code>)}</div>
+  return <div className="rulelist small"><b>{label}</b><div className="chips">{items.map(i => <code key={i}>{i}</code>)}</div></div>
 }
 
 function RoleCard({ name, r }: { name: string; r: RoleRules }) {

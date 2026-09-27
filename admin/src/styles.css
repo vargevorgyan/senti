@@ -277,3 +277,8 @@ td.what code { display: block; overflow: hidden; text-overflow: ellipsis; white-
 /* checkboxes and radios in lists: not the full-width text-input look from the global input rule */
 .pickrow input, .modelrow input { width: auto; height: auto; padding: 0; border: none; background: none; flex: none; }
 .pickrow .mono, .modelrow .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Server gateway: role cards list long paths as wrapping chips */
+.rulelist { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rulelist .chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; border: none; background: none; padding: 0; min-height: 0; }
+.rulelist code { font-size: 13px; line-height: 18px; padding: 2px 8px; border-radius: var(--radius-sm, 6px); background: var(--surface); border: 1px solid var(--line); overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
+.grid3 > .panel { min-width: 0; }
