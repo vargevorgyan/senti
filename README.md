@@ -21,7 +21,7 @@ Claude Code · Codex CLI · OpenCode
         ▼
 Senti engine (per Mac, FastAPI on ~/.senti/senti.sock)          ┌── Organization (docker compose) ──────────┐
   honeytokens → rules → profile → detectors → cache → judge ◄──►│ backend (FastAPI + SQLite)                │
-  local judge: Qwen3-4B (MLX)   corporate judge: via backend    │ admin panel (React, nginx)  :8080         │
+  local judge: Qwen3-4B (MLX)   corporate judge: via backend    │ admin panel (React, nginx)  :8443         │
   undo snapshots · hash-chained audit · sandbox profiles        │ corporate model (Ollama, qwen2.5:3b)      │
                                                                 └───────────────────────────────────────────┘
 ```
