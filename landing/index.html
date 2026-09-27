@@ -7,6 +7,10 @@
   <meta name="description" content="Senti checks every action Claude Code, Codex, Cursor and other AI agents try to take, before it runs. It allows the safe ones, asks about the odd ones and blocks the dangerous ones." />
   <meta name="theme-color" content="#0F1A2E" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <!-- styles load before anything is shown (render-blocking), not injected later by the script -->
+  <link rel="stylesheet" href="/src/style.css" />
+  <!-- the hero waits for its entrance animation instead of showing, vanishing and sliding back in -->
+  <script>if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('intro')</script>
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -27,6 +31,7 @@
       <a href="#features">Features</a>
       <a href="#teams">For teams</a>
       <a href="#gateway">Server gateway</a>
+      <a href="#pricing">Pricing</a>
     </nav>
     <a class="btn btn--lamp btn--sm" href="#install">Install</a>
   </header>
@@ -290,16 +295,55 @@ print(<span class="c-str">"All 42 tests passed"</span>)
       </div>
     </section>
 
+    <!-- pricing -->
+    <section class="pricing" id="pricing">
+      <div class="pricing__head">
+        <h2 class="h2">Pricing</h2>
+        <p>One developer or the whole company. Every plan checks every action before it runs.</p>
+      </div>
+      <div class="plans">
+        <article class="plan plan--pro">
+          <h3 class="plan__name">Pro</h3>
+          <p class="plan__price"><span class="plan__amount">$8</span><span class="plan__per">per developer / month</span></p>
+          <p class="plan__lede">For one developer and every agent on their Mac.</p>
+          <a class="btn btn--lamp plan__cta" href="#install">Get Pro</a>
+          <ul class="plan__list">
+            <li>Every supported agent: Claude Code, Codex, Cursor, Cline and more</li>
+            <li>Reads scripts before they run</li>
+            <li>Undo for deleted or overwritten files</li>
+            <li>Decoy keys and keys agents never see</li>
+            <li>AI check for unclear actions, on your own Mac</li>
+          </ul>
+        </article>
+        <article class="plan plan--enterprise">
+          <h3 class="plan__name">Enterprise</h3>
+          <p class="plan__price"><span class="plan__amount">Custom</span><span class="plan__per">priced for your company</span></p>
+          <p class="plan__lede">For teams that set the rules once and protect everyone.</p>
+          <a class="btn btn--ghost plan__cta" href="#install">Talk to us</a>
+          <ul class="plan__list">
+            <li>Everything in Pro, for every developer</li>
+            <li>Admin panel with roles and rules written in plain English</li>
+            <li>Your company’s own AI checks unclear actions, with secrets removed</li>
+            <li>MCP server gateway for agents and bots on your servers</li>
+            <li>One-line setup for each person, from their invite</li>
+            <li>A log nobody can quietly edit</li>
+            <li>Runs on your own servers</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
     <!-- ACTION -->
     <section class="cta" id="install">
       <div class="cta__glow" aria-hidden="true"></div>
       <h2 class="cta__title">Let the dog in.</h2>
-      <p class="cta__lede">Set it up once for the whole company. Your admin runs one command on a server; everyone else joins with the one line from their invite, and every AI agent they use is protected from then on.</p>
+      <p class="cta__lede">Set it up once for the whole company. Your admin runs one command on a server; everyone else joins with the one line from their invite, and every supported agent they use (Claude Code, Codex, Cursor, Cline and more) is protected from then on.</p>
       <div class="install">
         <pre class="install__code" data-install><span class="c-muted"># 1. On your server: admin panel, company AI, MCP gateway</span>
+git clone https://github.com/vargevorgyan/senti && cd senti
 ./senti-server
 
-<span class="c-muted"># 2. Each computer: the line from their invite (no admin password)</span>
+<span class="c-muted"># 2. Each developer’s Mac: the line from their invite (no admin password)</span>
 curl -fsSL https://senti.your.co/install.sh | sh -s -- '&lt;invite link&gt;'
 
 <span class="c-muted"># 3. Bots and agents on the server gateway</span>
@@ -307,7 +351,8 @@ claude mcp add --transport http senti-server \
   https://senti.your.co/api/v1/mcp/ --header "Authorization: Bearer sag_…"</pre>
         <button class="btn btn--lamp btn--sm install__copy" type="button" data-copy>Copy</button>
       </div>
-      <p class="cta__teams">It asks a few questions, starts the admin panel and prints its address. Invite people there: each person gets a link with their one-line setup. Works from the office or anywhere else.</p>
+      <p class="cta__teams">It asks a few questions, starts the admin panel and prints its address. Invite people there: each person gets a link with their one-line setup. Developers’ computers need macOS for now. To join from outside the office, give the server an address people can reach (<code>--public-url</code>).</p>
+      <p class="cta__teams">Just you, no company? On an Apple Silicon Mac, in a clone of the repo: <code>cd engine &amp;&amp; uv sync --extra mlx &amp;&amp; uv run senti start &amp;&amp; uv run senti install all</code></p>
     </section>
   </main>
 
@@ -316,10 +361,11 @@ claude mcp add --transport http senti-server \
       <svg class="dog" viewBox="0 0 130 130" aria-hidden="true"><path class="dog__head" d="M34 30l18 20h26l18-20 4 34c2 18-12 38-35 38S28 82 30 64z"/><circle class="dog__eye" cx="52" cy="66" r="5"/><circle class="dog__eye" cx="78" cy="66" r="5"/><path class="dog__nose" d="M58 80h14l-7 8z"/></svg>
       <span>Senti</span>
     </a>
-    <p>Guards your team’s computers; your data never leaves your company. Open source, MIT licensed.</p>
+    <p>Guards your team’s computers; with the on-server AI, your data never leaves your company. Open source, MIT licensed.</p>
     <nav aria-label="Footer">
       <a href="https://github.com/vargevorgyan/senti">GitHub</a>
       <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
       <a href="#install">Install</a>
     </nav>
   </footer>

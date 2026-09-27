@@ -1,4 +1,3 @@
-import './style.css'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
@@ -74,6 +73,8 @@ if (!reduced) {
     .from('.gate', { opacity: 0, y: 40, duration: 1.2 }, '-=0.7')
     .from('.gate__beam', { scaleY: 0, duration: 1.1, transformOrigin: '50% 0%' }, '-=1')
 }
+// the timeline has set every hero element to its starting state, so showing them now can't flash the final layout
+document.documentElement.classList.remove('intro')
 
 /* ---------- the checkpoint ---------- */
 type Verdict = 'allow' | 'ask' | 'block'

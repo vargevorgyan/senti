@@ -100,7 +100,7 @@ code { font: 0.9em var(--mono); background: rgba(239, 232, 218, 0.08); padding: 
   align-items: center;
   gap: 2rem;
   padding: 8px 8px 8px 20px;
-  width: min(760px, calc(100% - 32px));
+  width: min(960px, calc(100% - 32px));
   justify-content: space-between;
   border-radius: 999px;
   background: rgba(22, 35, 59, 0.62);
@@ -116,6 +116,10 @@ code { font: 0.9em var(--mono); background: rgba(239, 232, 218, 0.08); padding: 
 .nav__links a:hover { color: var(--bone); }
 
 /* ---------- hero ---------- */
+/* hidden until the entrance animation takes over (see main.ts); shown after 3 s anyway if the script never runs */
+.intro .hero__title, .intro .hero__lede, .intro .hero__ctas, .intro .gate { visibility: hidden; animation: intro-fallback 0s 3s forwards; }
+@keyframes intro-fallback { to { visibility: visible; } }
+
 .hero {
   position: relative;
   min-height: 100svh;
@@ -688,4 +692,26 @@ code { font: 0.9em var(--mono); background: rgba(239, 232, 218, 0.08); padding: 
   .gw__col--server .node::after { right: 100%; }
   .node.is-on::after { border-top-color: var(--lamp); }
   .node.is-hit::after { border-top-color: var(--allow); }
+}
+
+/* ---------- pricing ---------- */
+.pricing { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter) clamp(7rem, 14vw, 12rem); }
+.pricing__head { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1.5rem, 4vw, 4rem); align-items: end; }
+.pricing__head p { margin: 0; color: var(--bone-dim); font-size: 1.125rem; max-width: 32rem; }
+.plans { margin-top: clamp(2.5rem, 5vw, 4rem); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(1rem, 2.5vw, 2rem); }
+.plan { display: flex; flex-direction: column; padding: clamp(1.6rem, 3vw, 2.6rem); border: 1px solid var(--line); border-radius: var(--r-l); background: var(--night-2); }
+.plan--pro { border-color: rgba(244, 183, 64, 0.45); box-shadow: 0 0 0 6px var(--lamp-soft); }
+.plan__name { margin: 0; font: 700 1.3rem/1.15 var(--display); letter-spacing: -0.01em; }
+.plan__price { margin: 1.2rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem 0.8rem; }
+.plan__amount { font: 800 clamp(2.8rem, 5vw, 4rem)/1 var(--display); letter-spacing: -0.03em; }
+.plan--pro .plan__amount { color: var(--lamp); }
+.plan__per { color: var(--bone-dim); font-size: 0.975rem; }
+.plan__lede { margin: 1rem 0 0; color: var(--bone-dim); }
+.plan__cta { margin-top: 1.6rem; align-self: flex-start; }
+.plan__list { list-style: none; padding: 1.6rem 0 0; margin: 1.8rem 0 0; border-top: 1px solid var(--line); display: grid; gap: 0.8rem; }
+.plan__list li { padding-left: 1.4rem; position: relative; color: var(--bone-dim); }
+.plan__list li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp); }
+
+@media (max-width: 900px) {
+  .pricing__head, .plans { grid-template-columns: 1fr; }
 }
