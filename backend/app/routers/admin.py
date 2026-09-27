@@ -578,3 +578,18 @@ async def corp_status(admin: Admin = Auth, db: Session = Depends(get_db)):
 def changelog(limit: int = 100, admin: Admin = Auth, db: Session = Depends(get_db)):
     return [{"id": c.id, "ts": c.ts, "actor": c.actor, "action": c.action, "target": c.target, "detail": c.detail}
             for c in db.query(ChangeLog).order_by(ChangeLog.ts.desc()).limit(min(limit, 500)).all()]
+
+
+@router.get("/tls")
+def tls_info(admin: Admin = Auth):
+    """Certificate fingerprint for the enroll command (Macs pin it)."""
+    import hashlib
+    import os
+    import ssl
+    path = settings.tls_cert
+    if not path or not os.path.exists(path):
+        return {"enabled": False, "https_port": settings.https_port}
+    der = ssl.PEM_cert_to_DER_cert(open(path).read())
+    fp = hashlib.sha256(der).hexdigest()
+    return {"enabled": True, "https_port": settings.https_port, "fingerprint": fp,
+            "fingerprint_colons": ":".join(fp[i:i + 2] for i in range(0, len(fp), 2)).upper()}

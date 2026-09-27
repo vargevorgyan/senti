@@ -9,9 +9,10 @@ export default function Devices() {
   const toast = useToast()
   const [role, setRole] = useState('engineering')
   useLiveEvent(m => { if (m.type === 'device_enrolled') { devices.reload(); codes.reload() } })
-  const backend = `${window.location.protocol}//${window.location.hostname}:8000`
+  const { data: tls } = useLoad<{ enabled: boolean; https_port: number; fingerprint?: string }>(() => api('/admin/tls'))
+  const backend = tls?.enabled ? `https://${window.location.hostname}:${tls.https_port}` : `${window.location.protocol}//${window.location.host}`
   const code = codes.data?.[0]?.code ?? 'SENTI-DEMO'
-  const cmd = `senti enroll --backend ${backend} --code ${code} --email you@company.com`
+  const cmd = `senti enroll --backend ${backend}${tls?.fingerprint ? ` --fingerprint ${tls.fingerprint}` : ''} --code ${code} --email you@company.com`
   const copy = (t: string) => navigator.clipboard.writeText(t).then(() => toast('Copied.'))
   const newCode = async () => { await api('/admin/enrollment-codes', { method: 'POST', body: { role_id: role, uses: 10, days: 7 } }); codes.reload(); toast('New code created. It works 10 times within 7 days.') }
   const revoke = async (d: Device) => {
@@ -23,7 +24,7 @@ export default function Devices() {
       <div className="page-head"><div className="grow"><h1>Devices</h1><p>Macs running the Senti engine for this organization. Each one keeps a signed copy of its profiles, so it stays protected even when it can’t reach this server.</p></div></div>
       <section className="panel">
         <h2>Enroll a Mac</h2>
-        <p className="small muted">On the Mac, install the engine and run this command. The person’s role comes from the code.</p>
+        <p className="small muted">On the Mac, install the engine and run this command. The person’s role comes from the code; the fingerprint pins this server’s certificate so the Mac only ever talks to it.</p>
         <div className="copy"><pre className="mono">{cmd}</pre><button className="btn" onClick={() => copy(cmd)}><Icon name="copy" size={16} />Copy</button></div>
         <div className="row">
           <select value={role} onChange={e => setRole(e.target.value)} style={{ maxWidth: 220 }} aria-label="Role for new code">{(roles ?? []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>

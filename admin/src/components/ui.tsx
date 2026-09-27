@@ -109,14 +109,22 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let es: EventSource | null = null
     let retry: number | undefined
-    const open = () => {
-      es = new EventSource(`/api/v1/admin/stream?token=${encodeURIComponent(token.get())}`)
+    let stopped = false
+    const open = async () => {
+      if (stopped) return
+      let ticket = ''
+      try {
+        const r = await fetch('/api/v1/auth/stream-ticket', { method: 'POST', headers: { Authorization: `Bearer ${token.get()}` } })
+        if (r.status === 401) { token.clear(); window.dispatchEvent(new Event('senti:logout')); return }
+        ticket = (await r.json()).ticket
+      } catch { retry = window.setTimeout(open, 3000); return }
+      es = new EventSource(`/api/v1/admin/stream?token=${encodeURIComponent(ticket)}`)
       es.onopen = () => setConnected(true)
       es.onmessage = ev => { try { const m = JSON.parse(ev.data); subs.current.forEach(fn => fn(m)) } catch { /* keepalive */ } }
       es.onerror = () => { setConnected(false); es?.close(); retry = window.setTimeout(open, 3000) }
     }
     open()
-    return () => { es?.close(); window.clearTimeout(retry) }
+    return () => { stopped = true; es?.close(); window.clearTimeout(retry) }
   }, [])
   const subscribe = useCallback((fn: (m: LiveMsg) => void) => { subs.current.add(fn); return () => { subs.current.delete(fn) } }, [])
   return <LiveCtx.Provider value={{ connected, subscribe }}>{children}</LiveCtx.Provider>

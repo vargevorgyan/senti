@@ -88,8 +88,14 @@ def render(agent: str, action: Action, d: Decision | None, context: str | None) 
     if agent == "opencode" or agent == "generic":
         if d is None:
             return json.dumps({"verdict": "allow", "reason": "", "context": context})
-        return json.dumps({"verdict": d.verdict, "reason": voice(d), "layer": d.layer, "rule": d.rule, "context": context,
-                           "severity": d.severity, "snapshot": d.meta.get("snapshot")})
+        out = {"verdict": d.verdict, "reason": voice(d), "layer": d.layer, "rule": d.rule, "context": context,
+               "severity": d.severity, "snapshot": d.meta.get("snapshot")}
+        if d.meta.get("updated_input"):
+            upd = dict(d.meta["updated_input"])
+            if agent == "opencode" and "workdir" in upd:
+                upd.pop("workdir")
+            out["updatedInput"] = upd
+        return json.dumps(out)
     if action.event == "prompt":
         return ""
     if action.event == "post_tool":
@@ -97,6 +103,9 @@ def render(agent: str, action: Action, d: Decision | None, context: str | None) 
             return ""
         return json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": context}})
     assert d is not None
+    if d.verdict == "allow" and d.meta.get("updated_input"):
+        return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
+                                                  "permissionDecisionReason": voice(d), "updatedInput": d.meta["updated_input"]}})
     if agent == "codex":
         if d.verdict == "allow":
             return ""  # Codex rejects permissionDecision:allow without updatedInput; empty output = no objection

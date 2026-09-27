@@ -3,8 +3,8 @@
 #
 #   cp .env.example .env   # optional: change passwords / model
 #   docker compose up -d --build
-#   admin panel:  http://localhost:8080   (admin@senti.local / senti-admin by default)
-#   device API:   http://localhost:8000   (senti enroll --backend http://localhost:8000 --code SENTI-DEMO --email you@acme.test)
+#   admin panel:  https://localhost:8443  (admin@senti.local / senti-admin by default; self-signed certificate)
+#   device API:   https://localhost:8443  (the Devices page shows the enroll command with the certificate fingerprint)
 name: senti
 
 services:
@@ -17,11 +17,14 @@ services:
       SENTI_CORP_MODEL_URL: ${SENTI_CORP_MODEL_URL:-http://ollama:11434/v1}
       SENTI_CORP_MODEL: ${SENTI_CORP_MODEL:-qwen2.5:3b}
       SENTI_CORS_ORIGINS: ${SENTI_CORS_ORIGINS:-http://localhost:8080}
+      SENTI_TLS_CERT: /tls/cert.pem
+      SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
     volumes:
       - backend-data:/data
+      - tls:/tls:ro
     ports:
-      # Bound to localhost by default; set SENTI_BIND=0.0.0.0 to let Macs on your network enroll (change the admin password first).
-      - "${SENTI_BIND:-127.0.0.1}:${SENTI_BACKEND_PORT:-8000}:8000"
+      # Plain HTTP for local development only (always 127.0.0.1). Macs use https://HOST:8443 via the admin container.
+      - "127.0.0.1:${SENTI_BACKEND_PORT:-8000}:8000"
 
   admin:
     build: ./admin
@@ -29,7 +32,14 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      # names/IPs the certificate is valid for (Macs pin it by fingerprint anyway)
+      SENTI_TLS_HOSTS: ${SENTI_TLS_HOSTS:-localhost,127.0.0.1}
+    volumes:
+      - tls:/tls
     ports:
+      # HTTPS for the admin panel and the device API (TLS by default); HTTP only redirects
+      - "${SENTI_BIND:-127.0.0.1}:${SENTI_HTTPS_PORT:-8443}:443"
       - "${SENTI_BIND:-127.0.0.1}:${SENTI_ADMIN_PORT:-8080}:80"
 
   # The "corporate model": a small open model served by Ollama (CPU inside Docker, fits a 16 GB laptop).
@@ -58,5 +68,6 @@ services:
           memory: 6g
 
 volumes:
+  tls:
   backend-data:
   ollama-models:

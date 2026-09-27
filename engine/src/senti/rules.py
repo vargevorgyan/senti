@@ -326,6 +326,8 @@ HARD_DENY_CMD = [
     (r"rm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*[\"']?(/|/\*|~|~/|~/\*|\$HOME/?|\$HOME/\*|/Users/?|/System|/Applications)[\"']?(\s|$|[;&|)])", "Deletes your whole disk or home folder"),
     (r"(?i)\b(killall|pkill)\b[^;&|]*senti|\blaunchctl\s+(unload|bootout|remove|disable|stop)[^;&|]*senti|kill\s+[^;&|]*\$\(.*senti", "Tries to switch off Senti"),
     (r"history\s+-c|rm\s+[^;&|]*\.(bash|zsh)_history", "Erases your shell history (covering tracks)"),
+    (r"(^|[;&|(\s/])senti\s+(stop|uninstall|unenroll|enroll|install|service\s+uninstall|honeytoken\s+remove|undo\s+restore|secret)\b",
+     "Tries to switch off or reconfigure Senti"),
     (r"osascript[^;&|]*(keystroke|password|System Events)[^;&|]*(password|keystroke)", "Tries to type into other apps or phish for your password"),
 ]
 

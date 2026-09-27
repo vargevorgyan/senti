@@ -45,7 +45,7 @@ PERSONAL_PROFILE: dict[str, Any] = {
     "judge": {"mode": "local", "instructions": "", "send_to_corporate": "metadata_only"},
     "on_backend_unreachable": "strict_local",
     "approvals": {"ask_goes_to": "user"},
-    "features": {"undo": True, "honeytokens": True, "injection_scan": True, "scope_contract": False, "sandbox": False},
+    "features": {"undo": True, "honeytokens": True, "injection_scan": True, "scope_contract": False, "sandbox": False},  # sandbox = required
     "agent_overrides": {},
 }
 

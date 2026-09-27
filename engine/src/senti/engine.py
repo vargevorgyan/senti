@@ -29,7 +29,7 @@ from .rules import (CODE_EXT, check_action, classify_path, expand, find_secrets,
                     read_script, redact, scan_code, short)
 from .supply_chain import check_package
 
-NATIVE_ASK = {"claude": True, "codex": False, "opencode": False, "generic": True}
+NATIVE_ASK = {"claude": True, "codex": False, "opencode": False, "generic": True, "gateway": False}
 
 
 class Engine:
@@ -44,6 +44,8 @@ class Engine:
         self.prefetch: dict[str, asyncio.Task] = {}
         self.background: set[asyncio.Task] = set()
         self.allowlist = self._load_allowlist()
+        from .secrets import Grants
+        self.grants = Grants()
         self.started = time.time()
         self.stats = {"decisions": 0, "allow": 0, "ask": 0, "block": 0, "llm": 0}
         self.backend_state = "personal"  # personal | online | unreachable
@@ -58,7 +60,9 @@ class Engine:
         self.local = LocalJudge(self.settings.local_model, self.settings.allow_threshold, self.settings.unload_after_idle_s)
         if not (use_llm and self.settings.local_judge):
             self.local.state, self.local.error = "unavailable", "local judge disabled"
-        self.remote = RemoteJudge(self.settings.backend_url, self.settings.device_token, self.settings.judge_timeout_s) \
+        from .config import tls_verify
+        self.remote = RemoteJudge(self.settings.backend_url, self.settings.device_token, self.settings.judge_timeout_s,
+                                  tls_verify(self.settings)) \
             if self.settings.enrolled else None
 
     # ------------------------------------------------------------------ helpers
@@ -116,8 +120,26 @@ class Engine:
                 return {"decision": None, "context": None}
             if action.event == "post_tool":
                 return await self._post_tool(action, t0)
-            d = await self.decide(action)
+            brokered = self._secret_names(action)
+            if brokered is not None:
+                pre = self._check_secret_use(action, brokered)
+                if pre is not None:
+                    self._log(action, pre, t0)
+                    return {"decision": pre, "context": None}
+                original = action.input["command"]
+                from .secrets import neutral
+                action.input["command"] = neutral(original)  # rules and judge never see values, only markers
+                d = await self.decide(action)
+                action.input["command"] = original
+            else:
+                d = await self.decide(action)
+            d = self._enforce_identity_and_sandbox(action, d)
             d = await self._resolve_ask(action, d)
+            if brokered and d.verdict == "allow":
+                from .secrets import wrap
+                d.meta["updated_input"] = {**action.input, "command": wrap(action.input["command"],
+                                                                            self.grants.issue(brokered, action.input["command"]))}
+                d.meta["secrets"] = brokered
             if d.verdict == "allow":
                 self._maybe_snapshot(action, d)
             if d.verdict == "block" and self.settings.notifications:
@@ -334,6 +356,56 @@ class Engine:
         cr.reason = cr.reason or lr.reason
         return cr
 
+    # ------------------------------------------------------------------ secret brokering
+    @staticmethod
+    def _secret_names(a: Action) -> list[str] | None:
+        from .secrets import names_in
+        if a.tool != "Bash":
+            return None
+        names = names_in(a.input.get("command", ""))
+        return names or None
+
+    def _check_secret_use(self, a: Action, names: list[str]) -> Decision | None:
+        from .rules import host_matches
+        from .secrets import listing, neutral
+        known = listing()
+        missing = [n for n in names if n not in known]
+        if missing:
+            return Decision("block", f"Uses a secret Senti doesn't have ({', '.join(missing)})", "L1-secrets", "unknown_secret",
+                            severity="warning")
+        _, facts = check_action("Bash", {"command": neutral(a.input.get("command", ""))}, a.cwd, project_root(a.cwd))
+        hosts = [h for h in facts.get("hosts", []) if h]
+        for n in names:
+            allowed = known[n]["hosts"]
+            if not hosts:
+                return Decision("ask", f"Uses the secret {n} in a command that doesn't clearly go to one of its allowed sites",
+                                "L1-secrets", "secret_no_host", severity="warning")
+            bad = [h for h in hosts if not host_matches(h, allowed)]
+            if bad:
+                return Decision("block", f"Would send the secret {n} to {', '.join(sorted(set(bad)))}; it may only go to "
+                                         f"{', '.join(allowed) or 'nowhere'}", "L1-secrets", "secret_wrong_host", severity="critical")
+        if facts.get("writes"):
+            return Decision("ask", "Uses a secret in a command that also writes to a file (the value could be saved)",
+                            "L1-secrets", "secret_write", severity="warning")
+        return None
+
+    # ------------------------------------------------------------------ identity / sandbox requirements
+    def _enforce_identity_and_sandbox(self, a: Action, d: Decision) -> Decision:
+        ident = a.identity or {}
+        if d.verdict != "allow" or a.agent not in {"claude", "codex", "opencode"}:
+            return d
+        name = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}[a.agent]
+        if ident.get("verified") is False and self.settings.agent_identity == "enforce":
+            return Decision("ask", f"I couldn't confirm this request really comes from {name} (the calling program is "
+                                   f"{' < '.join(ident.get('chain', [])[:3]) or 'unknown'})", "L0-identity", "unverified_agent",
+                            severity="warning", meta={"identity": ident})
+        profile = self.profiles.for_agent(a.agent)
+        if (profile.get("features") or {}).get("sandbox") and ident and ident.get("sandboxed") is not True \
+                and a.tool in {"Bash", "apply_patch"}:
+            return Decision("ask", f"Your organization requires {name} to run inside its sandbox, and it isn't right now",
+                            "L1-profile", "sandbox_required", severity="warning", meta={"identity": ident})
+        return d
+
     # ------------------------------------------------------------------ ask resolution
     async def _resolve_ask(self, a: Action, d: Decision) -> Decision:
         if d.verdict != "ask":
@@ -469,6 +541,8 @@ class Engine:
                "input": _summarize(a), "task": self.tasks.get(a.session_id, "")[:200],
                "profile": self.profiles.for_agent(a.agent).get("id"), "user": self.settings.user_email,
                "ms": round((time.perf_counter() - t0) * 1000, 2), **(extra or {})}
+        if a.identity:
+            rec["identity"] = {k: a.identity.get(k) for k in ("verified", "sandboxed", "chain")}
         if d is not None:
             rec.update({"verdict": d.verdict, "reason": d.reason, "layer": d.layer, "rule": d.rule, "severity": d.severity,
                         "p": d.p, "meta": d.meta})

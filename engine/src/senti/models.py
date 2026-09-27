@@ -25,6 +25,7 @@ class Action:
     raw_tool: str = ""
     prompt: str = ""
     response: Any = None  # tool output for post_tool events
+    identity: dict | None = None  # peer-process verification result (see identity.py)
 
 
 @dataclass

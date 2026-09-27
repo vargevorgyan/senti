@@ -54,7 +54,14 @@ def check_password(pw: str, stored: str) -> bool:
 def make_admin_token(admin: Admin) -> str:
     now = int(time.time())
     return jwt.encode({"sub": str(admin.id), "email": admin.email, "iat": now, "exp": now + settings.token_ttl_hours * 3600,
-                       "typ": "admin"}, jwt_secret(), algorithm="HS256")
+                       "typ": "admin", "tv": admin.token_version or 0}, jwt_secret(), algorithm="HS256")
+
+
+def make_stream_ticket(admin: Admin) -> str:
+    """Short-lived, single-purpose token for EventSource (which cannot send headers)."""
+    now = int(time.time())
+    return jwt.encode({"sub": str(admin.id), "iat": now, "exp": now + 60, "typ": "stream", "tv": admin.token_version or 0},
+                      jwt_secret(), algorithm="HS256")
 
 
 def _decode(token: str) -> dict:
@@ -67,16 +74,19 @@ def _decode(token: str) -> dict:
 def current_admin(request: Request, authorization: str = Header(default=""), token: str = Query(default=""),
                   db: Session = Depends(get_db)) -> Admin:
     raw = authorization.removeprefix("Bearer ").strip()
+    expected = "admin"
     if not raw and token and request.url.path.endswith("/admin/stream"):
-        raw = token  # EventSource cannot set headers; the query token is accepted for the SSE stream only
+        raw, expected = token, "stream"  # EventSource cannot set headers: a 60-second stream ticket, never the session JWT
     if not raw:
         raise HTTPException(401, "not signed in")
     claims = _decode(raw)
-    if claims.get("typ") != "admin":
-        raise HTTPException(401, "not an admin token")
+    if claims.get("typ") != expected:
+        raise HTTPException(401, "wrong token type")
     admin = db.get(Admin, int(claims["sub"]))
     if admin is None:
         raise HTTPException(401, "admin not found")
+    if int(claims.get("tv", -1)) != int(admin.token_version or 0):
+        raise HTTPException(401, "this session was signed out")
     return admin
 
 

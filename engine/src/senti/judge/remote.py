@@ -9,7 +9,8 @@ from .base import JudgeResult
 
 
 class RemoteJudge:
-    def __init__(self, backend_url: str, device_token: str, timeout: float = 20.0):
+    def __init__(self, backend_url: str, device_token: str, timeout: float = 20.0, verify=True):
+        self.verify = verify
         self.url = backend_url.rstrip("/") + "/api/v1/judge"
         self.token = device_token
         self.timeout = timeout
@@ -19,7 +20,7 @@ class RemoteJudge:
     async def decide(self, profile_id: str, task: str, action: dict, script: str | None, facts: dict | None) -> JudgeResult:
         t0 = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as c:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify) as c:
                 r = await c.post(self.url, headers={"Authorization": f"Bearer {self.token}"},
                                  json={"profile_id": profile_id, "task": task, "action": action, "content": script,
                                        "facts": facts or {}})

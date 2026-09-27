@@ -20,6 +20,7 @@ class Admin(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     password_hash: Mapped[str] = mapped_column(String(300))
+    token_version: Mapped[int] = mapped_column(Integer, default=0)  # bump → every issued JWT is revoked
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
 
 

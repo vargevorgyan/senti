@@ -135,7 +135,7 @@ def cmd_service(a) -> int:
 
 def cmd_enroll(a) -> int:
     from .sync import enroll
-    s = enroll(a.backend, a.code, a.email)
+    s = enroll(a.backend, a.code, a.email, a.fingerprint, a.insecure_http)
     print(f"Enrolled in {s.org_name or 'organization'} as {s.user_email} (device {s.device_id}).")
     if _running():
         print("Restart the engine to connect: senti stop && senti start")
@@ -144,7 +144,7 @@ def cmd_enroll(a) -> int:
 
 def cmd_unenroll(a) -> int:
     s = Settings.load()
-    s.backend_url = s.device_token = s.device_id = s.backend_public_key = s.org_name = ""
+    s.backend_url = s.device_token = s.device_id = s.backend_public_key = s.org_name = s.backend_cert = ""
     s.save()
     (senti_home() / "profiles.signed.json").unlink(missing_ok=True)
     print("Left the organization; back to the built-in personal profile. Restart the engine.")
@@ -255,6 +255,24 @@ def cmd_shell_init(a) -> int:
     return 0
 
 
+def cmd_secret(a) -> int:
+    from . import secrets
+    if a.action == "add":
+        import getpass
+        val = sys.stdin.read().strip() if not sys.stdin.isatty() else getpass.getpass(f"Value for {a.name} (hidden): ")
+        if not val:
+            print("empty value, nothing saved", file=sys.stderr)
+            return 1
+        secrets.add(a.name, val, a.hosts.split(",") if a.hosts else [])
+        print(f"saved {a.name}; agents can use it as {{{{senti:{a.name}}}}} with: {a.hosts or '(no sites yet)'}")
+    elif a.action == "remove":
+        print("removed" if secrets.remove(a.name) else "no such secret")
+    else:
+        for n, m in secrets.listing().items():
+            print(f"{n:24s} {{{{senti:{n}}}}}  → {', '.join(m['hosts']) or '(no sites)'}")
+    return 0
+
+
 def cmd_check(a) -> int:
     body = {"agent": a.agent, "tool": a.tool, "cwd": a.cwd or os.getcwd(), "session_id": "cli", "task": a.task or ""}
     if a.tool == "Bash":
@@ -296,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--backend", required=True)
     s.add_argument("--code", required=True)
     s.add_argument("--email", required=True)
+    s.add_argument("--fingerprint", default="", help="SHA-256 fingerprint of the backend's TLS certificate (shown on the Devices page)")
+    s.add_argument("--insecure-http", action="store_true", help="allow plain HTTP to a non-local backend (lab only)")
     s.set_defaults(fn=cmd_enroll)
     sub.add_parser("unenroll").set_defaults(fn=cmd_unenroll)
     s = sub.add_parser("log", help="recent decisions")
@@ -326,6 +346,11 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("shell-init", help='print shell functions that sandbox agents: eval "$(senti shell-init)"')
     s.add_argument("--agents", default="opencode", help="comma-separated agent commands to wrap (default: opencode)")
     s.set_defaults(fn=cmd_shell_init)
+    s = sub.add_parser("secret", help="broker secrets: agents use {{senti:NAME}}, the value is injected only when running")
+    s.add_argument("action", choices=["add", "list", "remove"])
+    s.add_argument("name", nargs="?")
+    s.add_argument("--hosts", default="", help="comma-separated sites the secret may be sent to, e.g. api.stripe.com")
+    s.set_defaults(fn=cmd_secret)
     s = sub.add_parser("check", help="ask the engine about one action")
     s.add_argument("tool")
     s.add_argument("value")

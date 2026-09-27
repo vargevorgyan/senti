@@ -141,6 +141,23 @@ def test_event_user_cannot_be_spoofed(client, admin_headers, device):
 def test_query_token_only_for_stream(client, admin_headers):
     tok = admin_headers["Authorization"].split()[1]
     assert client.get(f"/api/v1/admin/users?token={tok}").status_code == 401
+    # the session JWT is not accepted as a stream ticket either
+    assert client.get(f"/api/v1/admin/stream?token={tok}").status_code == 401
+
+
+def test_stream_ticket_is_not_a_session(client, admin_headers):
+    ticket = client.post("/api/v1/auth/stream-ticket", headers=admin_headers).json()["ticket"]
+    assert client.get("/api/v1/admin/users", headers={"Authorization": f"Bearer {ticket}"}).status_code == 401
+
+
+def test_password_change_and_logout_all_revoke(client, admin_headers):
+    r = client.put("/api/v1/auth/password", headers=admin_headers, json={"current": "senti-admin", "new": "a-longer-pass"})
+    assert r.status_code == 200
+    assert client.get("/api/v1/auth/me", headers=admin_headers).status_code == 401
+    new = {"Authorization": f"Bearer {r.json()['token']}"}
+    assert client.get("/api/v1/auth/me", headers=new).status_code == 200
+    client.post("/api/v1/auth/logout-all", headers=new)
+    assert client.get("/api/v1/auth/me", headers=new).status_code == 401
 
 
 def test_enroll_cannot_switch_role(client, admin_headers, device):

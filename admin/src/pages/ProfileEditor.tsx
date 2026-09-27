@@ -15,7 +15,7 @@ const FEATURES: [string, string, string][] = [
   ['honeytokens', 'Decoy secrets', 'Planted fake keys; any agent that touches one is stopped at once.'],
   ['injection_scan', 'Prompt-injection warnings', 'Warn the agent when a file or page it read tries to give it orders.'],
   ['scope_contract', 'Task scope', 'Work out the sites a task needs from the prompt and allow them without asking.'],
-  ['sandbox', 'Sandbox', 'Run agents inside an OS sandbox that enforces these file and network limits.'],
+  ['sandbox', 'Require a sandbox', 'Agents must run inside an OS sandbox (Claude Code sandbox, Codex sandbox, senti run); otherwise I ask before every command.'],
 ]
 
 function Section({ id, title, lead, children }: { id: string; title: string; lead?: string; children: React.ReactNode }) {

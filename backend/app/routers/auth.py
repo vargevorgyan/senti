@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Admin
-from ..security import check_password, current_admin, hash_password, make_admin_token
+from ..security import check_password, current_admin, hash_password, make_admin_token, make_stream_ticket
 
 router = APIRouter(prefix="/api/v1/auth")
 
@@ -44,6 +44,21 @@ def change_password(body: PasswordIn, a: Admin = Depends(current_admin), db: Ses
         raise HTTPException(400, "current password is wrong")
     if len(body.new) < 8:
         raise HTTPException(422, "use at least 8 characters")
-    db.get(Admin, a.id).password_hash = hash_password(body.new)
+    row = db.get(Admin, a.id)
+    row.password_hash = hash_password(body.new)
+    row.token_version = (row.token_version or 0) + 1  # revoke every other session
+    db.commit()
+    return {"ok": True, "token": make_admin_token(row)}
+
+
+@router.post("/logout-all")
+def logout_all(a: Admin = Depends(current_admin), db: Session = Depends(get_db)):
+    row = db.get(Admin, a.id)
+    row.token_version = (row.token_version or 0) + 1
     db.commit()
     return {"ok": True}
+
+
+@router.post("/stream-ticket")
+def stream_ticket(a: Admin = Depends(current_admin)):
+    return {"ticket": make_stream_ticket(a)}

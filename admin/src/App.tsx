@@ -43,8 +43,16 @@ function Shell({ onLogout }: { onLogout: () => void }) {
     if (!current) return
     const next = window.prompt('New password (at least 8 characters)')
     if (!next) return
-    try { await api('/auth/password', { method: 'PUT', body: { current, new: next } }); toast('Password changed.') }
-    catch (e: any) { toast(e.message, true) }
+    try {
+      const r = await api<{ token: string }>('/auth/password', { method: 'PUT', body: { current, new: next } })
+      token.set(r.token)
+      toast('Password changed. Every other session was signed out.')
+    } catch (e: any) { toast(e.message, true) }
+  }
+  const logoutAll = async () => {
+    if (!confirm('Sign out every session of this account, including this one?')) return
+    await api('/auth/logout-all', { method: 'POST' }).catch(() => {})
+    onLogout()
   }
   const nav = [
     { to: '/', icon: 'home', label: 'Overview', end: true },
@@ -69,6 +77,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <span>{me?.email}</span>
           <button type="button" onClick={changePassword}>Change password</button>
           <button type="button" onClick={onLogout}>Sign out</button>
+          <button type="button" onClick={logoutAll}>Sign out everywhere</button>
         </div>
       </aside>
       <div className="main">

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     corp_model_api_key: str = ""
     corp_timeout_s: float = 25.0
     token_ttl_hours: int = 12
+    tls_cert: str = ""       # path to the TLS certificate served by the admin container
+    https_port: int = 8443
 
     @property
     def db_url(self) -> str:

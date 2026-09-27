@@ -36,3 +36,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def migrate(eng) -> None:
+    """Tiny additive migrations for existing SQLite databases (create_all never alters tables)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(eng)
+    wanted = {"admins": {"token_version": "INTEGER DEFAULT 0"}}
+    with eng.begin() as conn:
+        for table, cols in wanted.items():
+            if not insp.has_table(table):
+                continue
+            have = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in cols.items():
+                if col not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))

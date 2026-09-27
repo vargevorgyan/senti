@@ -34,6 +34,13 @@ class Settings:
     device_id: str = ""
     device_token: str = ""
     backend_public_key: str = ""  # base64 Ed25519 public key pinned at enrollment
+    backend_cert: str = ""        # path of the backend's TLS certificate pinned at enrollment (self-signed deployments)
+    agent_identity: str = "enforce"
+    # local model gateway for DIY agents (OpenAI-compatible proxy, loopback only)
+    gateway_enabled: bool = True
+    gateway_port: int = 11435
+    gateway_upstream: str = "http://localhost:11434/v1"
+    gateway_cwd: str = ""  # enforce | record: verify the calling process really is the claimed agent
     org_name: str = ""
     user_email: str = ""
     # Local judge
@@ -92,3 +99,14 @@ def hook_token(create: bool = False) -> str:
     with os.fdopen(fd, "w") as f:
         f.write(tok)
     return tok
+
+
+def tls_verify(settings: "Settings"):
+    """httpx `verify=` value: the pinned certificate (exactly it is trusted), or normal CA verification."""
+    import ssl
+    if settings.backend_cert and os.path.exists(settings.backend_cert):
+        ctx = ssl.create_default_context(cafile=settings.backend_cert)
+        ctx.check_hostname = False  # the pinned certificate itself is the identity
+        ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        return ctx
+    return True

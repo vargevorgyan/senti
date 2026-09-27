@@ -11,7 +11,7 @@ from .security import hash_password
 
 AGENTS = ["claude", "codex", "opencode"]
 
-BASE_FEATURES = {"undo": True, "honeytokens": True, "injection_scan": True, "scope_contract": False, "sandbox": True}
+BASE_FEATURES = {"undo": True, "honeytokens": True, "injection_scan": True, "scope_contract": False, "sandbox": False}
 
 DEVELOPER = {
     "applies_to": {"roles": ["engineering"], "agents": AGENTS},
@@ -72,7 +72,7 @@ AUTONOMOUS = {
               "send_to_corporate": "with_redacted_content"},
     "on_backend_unreachable": "strict_local",
     "approvals": {"ask_goes_to": "owner"},
-    "features": BASE_FEATURES,
+    "features": {**BASE_FEATURES, "sandbox": True},  # unattended agents must run sandboxed
     "agent_overrides": {},
 }
 

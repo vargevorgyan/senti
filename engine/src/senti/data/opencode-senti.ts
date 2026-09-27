@@ -42,6 +42,7 @@ export const SentiPlugin = async ({ directory, worktree }: any) => {
     "tool.execute.before": async (input: any, output: any) => {
       const r = await senti({ tool: input.tool, args: output.args, sessionID: input.sessionID, cwd }, "pre")
       if (r.verdict !== "allow") throw new Error(r.reason || "Senti: I stopped this.")
+      if (r.updatedInput && typeof r.updatedInput === "object") Object.assign(output.args, r.updatedInput)
     },
     "tool.execute.after": async (input: any, output: any) => {
       const r = await senti({ tool: input.tool, args: input.args, sessionID: input.sessionID, cwd, output: output?.output }, "post")

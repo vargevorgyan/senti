@@ -13,7 +13,9 @@ import time
 
 import httpx
 
-from .config import Settings
+import os
+
+from .config import Settings, tls_verify
 from .models import Action, Decision
 from .profiles import bundle_to_set, save_cache, verify_bundle
 
@@ -22,9 +24,38 @@ def _headers(s: Settings) -> dict:
     return {"Authorization": f"Bearer {s.device_token}"}
 
 
-def enroll(backend_url: str, code: str, user_email: str) -> Settings:
+def pin_certificate(backend_url: str, fingerprint: str) -> str:
+    """Fetch the server certificate, compare its SHA-256 fingerprint and store it for pinning. Returns the PEM path."""
+    import hashlib
+    import ssl
+    from urllib.parse import urlparse
+    u = urlparse(backend_url)
+    pem = ssl.get_server_certificate((u.hostname, u.port or 443), timeout=10)
+    got = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+    want = fingerprint.lower().replace(":", "").replace("sha256", "").strip("= ")
+    if got != want:
+        raise RuntimeError(f"certificate fingerprint mismatch: server has {got}, expected {want}. Not enrolling.")
+    from .config import senti_home
+    path = senti_home() / "backend-cert.pem"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(pem)
+    os.chmod(path, 0o600)
+    return str(path)
+
+
+def check_transport(backend_url: str, insecure_http: bool = False) -> None:
+    from urllib.parse import urlparse
+    u = urlparse(backend_url)
+    if u.scheme == "http" and u.hostname not in {"localhost", "127.0.0.1", "::1"} and not insecure_http:
+        raise RuntimeError("refusing plain HTTP to a remote backend: use https:// (with --fingerprint for a self-signed "
+                           "certificate) or pass --insecure-http for a lab setup")
+
+
+def enroll(backend_url: str, code: str, user_email: str, fingerprint: str = "", insecure_http: bool = False) -> Settings:
     s = Settings.load()
-    r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/enroll", timeout=15,
+    check_transport(backend_url, insecure_http)
+    s.backend_cert = pin_certificate(backend_url, fingerprint) if fingerprint and backend_url.startswith("https") else ""
+    r = httpx.post(backend_url.rstrip("/") + "/api/v1/devices/enroll", timeout=15, verify=tls_verify(s),
                    json={"code": code, "user_email": user_email, "hostname": socket.gethostname(),
                          "platform": f"{platform.system()} {platform.release()} {platform.machine()}"})
     if r.status_code >= 400:
@@ -39,7 +70,7 @@ def enroll(backend_url: str, code: str, user_email: str) -> Settings:
 
 async def fetch_profiles(engine) -> bool:
     s = engine.settings
-    async with httpx.AsyncClient(timeout=10) as c:
+    async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
         r = await c.get(s.backend_url + "/api/v1/device/profiles", headers=_headers(s))
         if r.status_code == 401:
             engine.backend_error = "device token rejected (device revoked?)"
@@ -68,7 +99,7 @@ async def profile_loop(engine) -> None:
         try:
             await fetch_profiles(engine)
             backoff = 1.0
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=45)) as c:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=45), verify=tls_verify(s)) as c:
                 async with c.stream("GET", s.backend_url + "/api/v1/device/stream", headers=_headers(s)) as r:
                     r.raise_for_status()
                     async for line in r.aiter_lines():
@@ -100,7 +131,7 @@ async def upload_loop(engine, interval: float = 3.0) -> None:
             batch, offset = engine.audit.pending(200)
             if not batch:
                 continue
-            async with httpx.AsyncClient(timeout=10) as c:
+            async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
                 r = await c.post(s.backend_url + "/api/v1/events", headers=_headers(s), json={"events": batch})
                 r.raise_for_status()
             engine.audit.mark_uploaded(offset)
@@ -114,7 +145,7 @@ async def heartbeat_loop(engine, interval: float = 30.0) -> None:
     s = engine.settings
     while True:
         try:
-            async with httpx.AsyncClient(timeout=10) as c:
+            async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
                 await c.post(s.backend_url + "/api/v1/device/heartbeat", headers=_headers(s), json={"status": engine.status()})
         except asyncio.CancelledError:
             raise
@@ -129,7 +160,7 @@ async def request_approval(s: Settings, a: Action, d: Decision, profile: dict, t
             "cwd": a.cwd, "session_id": a.session_id, "profile_id": profile.get("id"), "rule": d.rule}
     deadline = time.time() + timeout
     try:
-        async with httpx.AsyncClient(timeout=10) as c:
+        async with httpx.AsyncClient(timeout=10, verify=tls_verify(s)) as c:
             r = await c.post(s.backend_url + "/api/v1/approvals", headers=_headers(s), json=body)
             r.raise_for_status()
             aid = r.json()["id"]

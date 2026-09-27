@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .bus import bus
 from .config import settings
-from .db import Base, SessionLocal, engine
+from .db import Base, SessionLocal, engine, migrate
 from .routers import admin, auth, device
 from .seed import seed
 from .signing import private_key
@@ -18,6 +18,7 @@ from .signing import private_key
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    migrate(engine)
     with SessionLocal() as db:
         seed(db)
     private_key()  # create the signing key on first run
