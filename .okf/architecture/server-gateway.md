@@ -42,6 +42,16 @@ Agents (Claude Code, custom bots…) ── MCP over HTTPS, token = role ──�
 Senti performs the action itself: no shell, confined to the shared folder, minimal env, time and size limits; logged
 ```
 
+# What agents can reach (sources)
+
+The installer mounts one host folder into the runner as `/srv` (`SENTI_GATEWAY_DIR`, default `./server-data`; another folder
+with `./senti-server install --gateway-dir /path` — its files keep their owner, the runner gets an ACL). In the admin panel
+(**Server gateway → What agents can reach**) the admin picks, inside it, the **folder** agents work in (paths in the policy are
+relative to it) and the **SQLite file** for `query_db` (or none). Stored in the backend (`gateway_sources`), sent with every
+runner call; the runner resolves both and refuses anything outside `/srv`, and denies the database file itself to file tools
+and commands. A source that disappears fails closed. No choice yet = the install default (`server-files/`, `server.db`).
+Demo data (`--demo-data`) is opt-in only.
+
 # Security properties (tested)[^tests]
 
 - **Token = identity and role**: `sag_…` tokens, only the SHA-256 stored, shown once, revocable; the whole MCP endpoint

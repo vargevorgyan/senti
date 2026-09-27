@@ -64,6 +64,9 @@ def inventory(root: Path, db_path: str, max_entries: int = 60) -> str:
         lines.append(f"  {rel}{'/' if p.is_dir() else ''}")
         n += 1
     lines.append("Database tables:")
+    if not db_path:
+        lines.append("  (no database connected)")
+        return "\n".join(lines)
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         for (t,) in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%' order by name"):
@@ -148,6 +151,8 @@ def dropped_items(raw: dict, policy: CompiledPolicy) -> list[str]:
 
 
 def db_schema(db_path: str) -> dict[str, set[str]]:
+    if not db_path:
+        return {}
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         tables = [t for (t,) in con.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'")]

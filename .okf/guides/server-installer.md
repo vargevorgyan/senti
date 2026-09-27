@@ -39,6 +39,7 @@ fingerprint and next steps. Re-running on an existing install keeps data (people
 | `--http-port N` | `SENTI_ADMIN_PORT` | 8081 | plain HTTP, only redirects to the HTTPS port |
 | `--admin-base PATH` | `SENTI_ADMIN_BASE` | `/` | admin panel under a sub-path such as `/admin/`; `/api/`, `/join`, `/install.sh`, `/downloads/` stay at the root |
 | `--public-url URL` | `SENTI_PUBLIC_URL`, `SENTI_PUBLIC_TLS=true` | empty | Macs reach Senti through a reverse proxy with a publicly trusted certificate (e.g. `https://senti.acme.com`, no port): invites carry no fingerprint, Macs verify the normal way, and Senti's own port stays on `127.0.0.1` (implies `--network local`) |
+| `--gateway-dir PATH` | `SENTI_GATEWAY_DIR`, `SENTI_GATEWAY_KEEP_OWNER=true` | `./server-data` | host folder the server gateway may use; the admin picks the folder and SQLite file inside it in the panel. Files keep their owner (ACL for uid 10001 via `setfacl`) |
 | `--trusted-proxy CIDRS` | `SENTI_TRUSTED_PROXY` | empty | a reverse proxy on the same server (e.g. `172.16.0.0/12` for the host's nginx reaching Docker); its `X-Forwarded-For` becomes the client address, so `SENTI_ADMIN_ALLOW` and rate limits see real callers |
 
 The backend port is no longer published (only the admin container reaches it), so it can't clash with other services.

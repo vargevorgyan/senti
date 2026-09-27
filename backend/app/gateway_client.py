@@ -34,13 +34,16 @@ async def call(req: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
 
 
 class RunnerOps:
-    """What the policy compiler needs from the shared data, answered by the runner."""
+    """What the policy compiler needs from the shared data, answered by the runner (for the admin's chosen sources)."""
+
+    def __init__(self, sources: dict | None = None):
+        self.sources = sources or {}
 
     async def inventory(self) -> str:
-        return (await call({"op": "inventory"}))["text"]
+        return (await call({"op": "inventory", **self.sources}))["text"]
 
     async def db_schema(self) -> dict[str, set[str]]:
-        return {t: set(c) for t, c in (await call({"op": "db_schema"}))["schema"].items()}
+        return {t: set(c) for t, c in (await call({"op": "db_schema", **self.sources}))["schema"].items()}
 
     async def evaluate(self, policy: dict, examples: list[dict]) -> list[dict]:
-        return (await call({"op": "evaluate", "policy": policy, "examples": examples}, timeout=120))["results"]
+        return (await call({"op": "evaluate", "policy": policy, "examples": examples, **self.sources}, timeout=120))["results"]

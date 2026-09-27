@@ -12,6 +12,7 @@ interface RoleRules {
 interface Example { role: string; tool: string; arg: string; expected: string; got: string; reason: string; ok: boolean; why: string }
 interface Draft { text: string; compiled: { roles: Record<string, RoleRules> }; examples: Example[]; warnings: string[]; compiled_at: number }
 interface Active { text: string; compiled: { roles: Record<string, RoleRules> }; version: number; approved_at: number; approved_by: string }
+interface Sources { folder: string; database: string; configured: boolean; share: string; folders: string[]; databases: string[]; error?: string | null }
 interface PolicyState { draft: Draft | null; active: Active | null; inventory: string }
 interface Agent { id: string; name: string; role: string; created_at: number; last_used: number; calls: number; revoked: boolean }
 interface NewAgent extends Agent { token: string; url: string; claude_code: string; bridge_command: string; mcp_json: unknown }
@@ -39,6 +40,51 @@ function RoleCard({ name, r }: { name: string; r: RoleRules }) {
       <List label="Hidden columns" items={r.database.deny_columns} />
       {r.notes && <p className="small muted">Supervisor note: {r.notes}</p>}
     </div>
+  )
+}
+
+/** What agents can reach: a folder and a SQLite file inside the host folder shared with Senti. */
+function SourcesPanel({ onSaved }: { onSaved: () => void }) {
+  const src = useLoad<Sources>(() => api('/admin/gateway/sources'))
+  const toast = useToast()
+  const [pick, setPick] = useState<{ folder: string; database: string } | null>(null)
+  const s = src.data
+  const cur = pick ?? (s ? { folder: s.folder, database: s.database } : { folder: '.', database: '' })
+  const changed = !!s && (cur.folder !== s.folder || cur.database !== s.database || !s.configured)
+  const save = async () => {
+    try {
+      await api('/admin/gateway/sources', { method: 'PUT', body: cur })
+      setPick(null); src.reload(); onSaved()
+      toast('Saved. Agents now use this folder and database. Regenerate the rules if the paths or tables changed.')
+    } catch (e: any) { toast(e.message, true) }
+  }
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>What agents can reach</h2>
+        <button className="btn ghost sm" type="button" onClick={() => { setPick(null); src.reload() }}>Refresh</button></div>
+      <p className="small muted">Everything below is inside <code>{s?.share ?? '…'}</code> on the server. Agents see only the folder and database you choose here; the rules below decide the rest.</p>
+      {s?.error && <p className="small"><span className="pill block">Runner unavailable</span> {s.error}</p>}
+      {s && (
+        <div className="grid2">
+          <label className="field"><span>Folder</span>
+            <select value={cur.folder} onChange={e => setPick({ ...cur, folder: e.target.value })}>
+              {s.folders.map(f => <option key={f} value={f}>{f === '.' ? '(the whole shared folder)' : f}</option>)}
+            </select>
+            <span className="hint">Paths in the policy are relative to this folder.</span></label>
+          <label className="field"><span>Database (SQLite)</span>
+            <select value={cur.database} onChange={e => setPick({ ...cur, database: e.target.value })}>
+              <option value="">No database</option>
+              {s.databases.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <span className="hint">{s.databases.length ? 'Files ending in .db, .sqlite or .sqlite3. The file itself is never readable as a file.' : 'No .db / .sqlite files found in the shared folder.'}</span></label>
+        </div>
+      )}
+      <div className="row">
+        <button className="btn primary" type="button" onClick={save} disabled={!changed}>Save</button>
+        {s && !s.configured && <span className="small muted">Not chosen yet: using the install default.</span>}
+      </div>
+      <p className="small muted">To share a different folder of the server, run <code>./senti-server install --gateway-dir /path/to/folder</code> on it (your files keep their owner).</p>
+    </section>
   )
 }
 
@@ -85,6 +131,8 @@ export default function Gateway() {
     <div className="page">
       <div className="page-head"><div className="grow"><h1>Server gateway</h1>
         <p>AI agents reach this server’s files, commands and database only through Senti. Describe who may do what in plain English; Senti turns it into rules, checks every call, and lets a supervisor model decide anything the rules don’t cover.</p></div></div>
+
+      <SourcesPanel onSaved={policy.reload} />
 
       <section className="panel">
         <h2>Policy in plain English</h2>

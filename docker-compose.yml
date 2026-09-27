@@ -32,6 +32,7 @@ services:
       SENTI_HTTPS_PORT: ${SENTI_HTTPS_PORT:-8443}
       # all gateway work (files, commands, SQL) happens in the runner container, over this socket
       SENTI_GATEWAY_RUNNER: /run/senti-runner/runner.sock
+      SENTI_GATEWAY_DIR_LABEL: ${SENTI_GATEWAY_DIR:-./server-data}   # shown in the admin panel only
       SENTI_POLICY_MODEL_URL: ${SENTI_POLICY_MODEL_URL:-}
       SENTI_POLICY_MODEL: ${SENTI_POLICY_MODEL:-}
       SENTI_POLICY_MODEL_API_KEY: ${SENTI_POLICY_MODEL_API_KEY:-}
@@ -53,6 +54,10 @@ services:
     network_mode: none
     environment:
       SENTI_GATEWAY_RUNNER: /run/senti-runner/runner.sock
+      # the host folder shared with the gateway; the admin panel picks the folder and SQLite file agents use inside it
+      SENTI_GATEWAY_SHARE: /srv
+      # true for a folder with your own data (./senti-server --gateway-dir): its owner is left alone (access via ACL)
+      SENTI_GATEWAY_KEEP_OWNER: ${SENTI_GATEWAY_KEEP_OWNER:-false}
       SENTI_GATEWAY_ROOT: /srv/server-files
       SENTI_GATEWAY_DB: /srv/server.db
       SENTI_DATA_DIR: /tmp/unused

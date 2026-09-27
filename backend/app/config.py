@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     judge_rpm: int = 60
     approvals_rpm: int = 20
     # Server gateway (MCP): the folder and SQLite database agents may reach, only through the gateway
-    gateway_root: str = ""        # default: <data_dir>/server-files
+    gateway_root: str = ""        # default: <data_dir>/server-files (used until the admin picks sources)
     gateway_db: str = ""          # default: <data_dir>/server.db
+    # The runner's mount of the host folder shared with the gateway (SENTI_GATEWAY_DIR). The admin picks the folder and
+    # SQLite file agents may use inside it; the runner refuses anything that resolves outside it.
+    gateway_share: str = ""
+    gateway_dir_label: str = ""   # the host path of that folder, shown in the admin panel only
     gateway_rpm: int = 120        # per agent token
     gateway_cmd_timeout_s: float = 10.0
     # Model that turns the plain-English policy into rules (default: the corporate model). Use a strong one; it runs rarely.

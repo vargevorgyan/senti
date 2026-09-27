@@ -109,13 +109,16 @@ Usage: ./senti-server install [options]      (without options it asks, with sens
                            Senti's own port then stays on this machine (defaults to --network local)
   --trusted-proxy CIDRS    a reverse proxy on this server in front of Senti (e.g. 172.16.0.0/12 for the host's nginx):
                            Senti then takes the client address from its X-Forwarded-For header
+  --gateway-dir PATH       host folder the server gateway may use (default ./server-data). In the admin panel you then
+                           pick the folder and SQLite file agents reach inside it. Its files keep their owner; Senti
+                           gets access through an ACL (setfacl, Linux)
   --demo-data              add a fake "company server" (files + database) to try the server gateway
 EOF
 }
 
 cmd_install() {
   local ORG="" ADMIN_EMAIL="" ADMIN_PASSWORD="" NETWORK="" HOSTS="" AI="" AI_URL="" AI_MODEL="" AI_KEY="" HTTPS_PORT="" DEMO=""
-  local PUBLIC_HOST="" ADMIN_ALLOW="" HTTP_PORT="" ADMIN_BASE="" TRUSTED_PROXY="" PUBLIC_URL=""
+  local PUBLIC_HOST="" ADMIN_ALLOW="" HTTP_PORT="" ADMIN_BASE="" TRUSTED_PROXY="" PUBLIC_URL="" GATEWAY_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes|-y) YES=1 ;;
@@ -135,6 +138,7 @@ cmd_install() {
       --admin-base) ADMIN_BASE=$2; shift ;;
       --trusted-proxy) TRUSTED_PROXY=$2; shift ;;
       --public-url) PUBLIC_URL=$2; shift ;;
+      --gateway-dir) GATEWAY_DIR=$2; shift ;;
       --demo-data) DEMO=yes ;;
       -h|--help) usage_install; exit 0 ;;
       *) die "Unknown option $1 (see ./senti-server install --help)" ;;
@@ -264,6 +268,13 @@ cmd_install() {
   HTTP_PORT=${HTTP_PORT:-$(env_get SENTI_ADMIN_PORT)}; HTTP_PORT=${HTTP_PORT:-8081}
   ADMIN_BASE=${ADMIN_BASE:-$(env_get SENTI_ADMIN_BASE)}; ADMIN_BASE=${ADMIN_BASE:-/}
   TRUSTED_PROXY=${TRUSTED_PROXY:-$(env_get SENTI_TRUSTED_PROXY)}
+  GATEWAY_DIR=${GATEWAY_DIR:-$(env_get SENTI_GATEWAY_DIR)}; GATEWAY_DIR=${GATEWAY_DIR:-./server-data}
+  local keep_owner=false
+  if [ "$GATEWAY_DIR" != ./server-data ]; then
+    case "$GATEWAY_DIR" in /*) ;; *) die "--gateway-dir must be an absolute path, like /srv/company-data" ;; esac
+    [ -d "$GATEWAY_DIR" ] || die "--gateway-dir: $GATEWAY_DIR doesn't exist"
+    keep_owner=true
+  fi
   for p in "$HTTPS_PORT" "$HTTP_PORT"; do
     case "$p" in ''|*[!0-9]*) die "Ports must be numbers (got '$p')" ;; esac
     [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "Port $p is out of range"
@@ -299,7 +310,8 @@ SENTI_CORP_MODEL_URL=$AI_URL
 SENTI_CORP_MODEL=$AI_MODEL
 SENTI_CORP_MODEL_API_KEY=$AI_KEY
 SENTI_CORP_MODEL_ENABLED=$([ "$AI" = none ] && echo false || echo true)
-SENTI_GATEWAY_DIR=./server-data
+SENTI_GATEWAY_DIR=$GATEWAY_DIR
+SENTI_GATEWAY_KEEP_OWNER=$keep_owner
 SENTI_AI_MODE=$AI
 # Address in invite links (Macs connect here from anywhere), and who may open the admin panel
 SENTI_PUBLIC_URL=${PUBLIC_URL:-https://$PUBLIC_HOST:$HTTPS_PORT}
@@ -313,6 +325,15 @@ SENTI_INSTALLER_URL=$(env_get SENTI_INSTALLER_URL)
 EOF
   umask 022
   mkdir -p server-data
+  if [ "$keep_owner" = true ]; then
+    # Senti's gateway runner (uid 10001) reads and writes there through an ACL; the files keep their owner
+    if command -v setfacl >/dev/null 2>&1 && { setfacl -R -m u:10001:rwX -m d:u:10001:rwX "$GATEWAY_DIR" 2>/dev/null \
+         || sudo setfacl -R -m u:10001:rwX -m d:u:10001:rwX "$GATEWAY_DIR"; }; then
+      ok "Server gateway folder: $GATEWAY_DIR (Senti has access; the files keep their owner)"
+    else
+      warn "Give uid 10001 read (and, for writes, write) access to $GATEWAY_DIR, e.g. setfacl -R -m u:10001:rwX $GATEWAY_DIR"
+    fi
+  fi
   ok "Settings saved to $ENV_FILE (readable only by you)"
 
   step "Building and starting Senti (first time: a few minutes)"

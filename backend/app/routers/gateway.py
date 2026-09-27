@@ -57,6 +57,12 @@ def active_policy(db: Session) -> tuple[CompiledPolicy | None, str]:
     return CompiledPolicy.model_validate(a["compiled"]), a.get("text", "")
 
 
+def gateway_sources(db: Session) -> dict:
+    """The folder and SQLite file (inside the shared host folder) the admin picked; {} = the install default."""
+    v = _kv(db, "gateway_sources")
+    return {"folder": v.get("folder", "."), "database": v.get("database", "")} if v else {}
+
+
 def policy_model_config(db: Session) -> dict:
     from .device import corp_config
     cfg = dict(corp_config(db))
@@ -127,7 +133,7 @@ class Blocked(Exception):
     pass
 
 
-async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, dict]:
+async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, dict, dict]:
     """Authenticate, rate-limit, decide (rules in the runner → supervisor). Raises Blocked with the reason the agent should
     see. Returns the runner's check answer (query_db results come with it)."""
     t0 = time.perf_counter()
@@ -139,12 +145,13 @@ async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, d
         if not limiter.allow(f"gateway:{agent.id}", settings.gateway_rpm):
             raise Blocked("Senti: too many requests from this agent; slow down")
         policy, text = active_policy(db)
+        sources = gateway_sources(db)
         role = policy.roles.get(agent.role) if policy else None
         if role is None:
             d = GatewayDecision("block", f"No approved policy for role '{agent.role}' yet", "hard-rule")
         else:
             try:
-                resp = await runner_call({"op": "check", "tool": tool, "arg": arg, "role": role.model_dump()})
+                resp = await runner_call({"op": "check", "tool": tool, "arg": arg, "role": role.model_dump(), **sources})
                 dj = resp["decision"]
                 d = GatewayDecision(dj["verdict"], dj["reason"], dj["layer"])
             except (RunnerUnavailable, KeyError) as e:
@@ -154,18 +161,18 @@ async def gate(ctx: Context, tool: str, arg: str) -> tuple[Caller, RolePolicy, d
     log(agent, tool, arg, d, t0)
     if d.verdict != "allow":
         raise Blocked(f"Blocked by Senti: {d.reason}")
-    return agent, role, resp
+    return agent, role, resp, sources
 
 
 async def run_tool(ctx: Context, tool: str, arg: str, content: str = "") -> str:
     try:
-        _, role, resp = await gate(ctx, tool, arg)
+        _, role, resp, sources = await gate(ctx, tool, arg)
     except Blocked as e:
         return str(e)
     if tool == "query_db":
         return json.dumps({"columns": resp.get("columns", []), "rows": resp.get("rows", [])}, default=str)
     try:
-        out = await runner_call({"op": "exec", "tool": tool, "arg": arg, "content": content, "role": role.model_dump()})
+        out = await runner_call({"op": "exec", "tool": tool, "arg": arg, "content": content, "role": role.model_dump(), **sources})
     except RunnerUnavailable as e:
         return f"Blocked by Senti: {e}"
     if (out.get("decision") or {}).get("verdict") == "block":  # the files changed between check and run
@@ -275,7 +282,7 @@ def agent_json(a: GatewayAgent) -> dict:
 @router.get("/policy")
 async def get_policy(admin: Admin = Auth, db: Session = Depends(get_db)):
     try:
-        inventory = await RunnerOps().inventory()
+        inventory = await RunnerOps(gateway_sources(db)).inventory()
     except RunnerUnavailable as e:
         inventory = f"({e})"
     return {"draft": _kv(db, "gateway_draft") or None, "active": _kv(db, "gateway_active") or None, "inventory": inventory}
@@ -294,7 +301,7 @@ async def compile_policy(body: PolicyIn, admin: Admin = Auth, db: Session = Depe
         raise HTTPException(503, "No AI model is set up to turn the policy into rules. Choose one on the Corporate judge "
                                  "page (any OpenAI-compatible API) or set SENTI_POLICY_MODEL_URL, then generate again.")
     try:
-        out = await policy_compiler.compile_policy(cfg, body.text, RunnerOps())
+        out = await policy_compiler.compile_policy(cfg, body.text, RunnerOps(gateway_sources(db)))
     except httpx.TransportError as e:
         raise HTTPException(503, f"Can't reach the AI model at {cfg.get('url', '?')} ({type(e).__name__}). Check the "
                                  "Corporate judge page or SENTI_POLICY_MODEL_URL, then generate again.")
@@ -303,6 +310,43 @@ async def compile_policy(body: PolicyIn, admin: Admin = Auth, db: Session = Depe
     draft = {"text": body.text, **out, "compiled_at": time.time(), "compiled_by": admin.email}
     _set_kv(db, "gateway_draft", draft)
     return draft
+
+
+@router.get("/sources")
+async def get_sources(admin: Admin = Auth, db: Session = Depends(get_db)):
+    """What agents can reach: the chosen folder and database, and what the shared host folder contains to pick from."""
+    try:
+        options = await runner_call({"op": "browse"})
+    except RunnerUnavailable as e:
+        options = {"folders": [], "databases": [], "error": str(e)}
+    cur = gateway_sources(db)
+    if not cur:  # install default: server-files/ and server.db inside the shared folder, when they exist
+        cur = {"folder": "server-files" if "server-files" in options.get("folders", []) else ".",
+               "database": "server.db" if "server.db" in options.get("databases", []) else ""}
+    return {**cur, "configured": bool(gateway_sources(db)), "share": settings.gateway_dir_label or "the shared folder",
+            "folders": options.get("folders", []), "databases": options.get("databases", []), "error": options.get("error")}
+
+
+class SourcesIn(BaseModel):
+    folder: str = "."
+    database: str = ""
+
+
+@router.put("/sources")
+async def put_sources(body: SourcesIn, admin: Admin = Auth, db: Session = Depends(get_db)):
+    try:
+        options = await runner_call({"op": "browse"})
+    except RunnerUnavailable as e:
+        raise HTTPException(503, str(e))
+    if body.folder not in options.get("folders", []):
+        raise HTTPException(422, "choose a folder inside the shared folder")
+    if body.database and body.database not in options.get("databases", []):
+        raise HTTPException(422, "choose a SQLite file (.db, .sqlite) inside the shared folder, or no database")
+    _set_kv(db, "gateway_sources", {"folder": body.folder, "database": body.database})
+    db.add(ChangeLog(actor=admin.email, action="gateway_sources.update", target=body.folder,
+                     detail={"database": body.database}))
+    db.commit()
+    return await get_sources(admin, db)
 
 
 @router.post("/policy/approve")
